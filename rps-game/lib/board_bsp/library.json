@@ -1,0 +1,13 @@
+{
+  "name": "board_bsp",
+  "version": "1.0.0",
+  "build": {
+    "includeDir": "include",
+    "srcDir": "src",
+    "flags": [
+      "-I include",
+      "-I include/exio",
+      "-I src/exio"
+    ]
+  }
+}
