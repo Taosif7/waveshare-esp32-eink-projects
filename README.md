@@ -11,3 +11,7 @@ Projects for the [Waveshare ESP32-C6-ePaper-1.54](https://www.waveshare.com/esp3
 ## Hardware
 
 Waveshare **ESP32-C6-ePaper-1.54** (200×200 B/W e-paper). See `rps-game/README.md` for build/flash notes.
+
+## Board reference
+
+See [ESP32-C6-ePaper-1.54-Technical-Specification.md](ESP32-C6-ePaper-1.54-Technical-Specification.md) for pinout, USB caveats, joystick wiring, and bring-up notes.
