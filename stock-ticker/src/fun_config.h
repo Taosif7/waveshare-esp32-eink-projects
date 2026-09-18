@@ -32,8 +32,23 @@
 #define FUN_CURRENCY "$"
 #endif
 
-// Gap allowed between the two taps of a buy/sell double click. Raising this
-// also delays single taps, since a tap is only final once the window closes.
+// Which gestures place an order. Either or both.
+#ifndef FUN_GESTURE_LONG_PRESS
+#define FUN_GESTURE_LONG_PRESS 1
+#endif
+
+#ifndef FUN_GESTURE_DOUBLE_CLICK
+#define FUN_GESTURE_DOUBLE_CLICK 1
+#endif
+
+// Hold time for a long-press order. Going much below ~400 turns an unhurried
+// single tap into an accidental order.
+#ifndef FUN_LONG_PRESS_MS
+#define FUN_LONG_PRESS_MS 600
+#endif
+
+// Gap allowed between the two taps of a double click. Raising this also delays
+// single taps, since a tap is only final once the window closes.
 #ifndef FUN_DOUBLE_CLICK_MS
 #define FUN_DOUBLE_CLICK_MS 450
 #endif

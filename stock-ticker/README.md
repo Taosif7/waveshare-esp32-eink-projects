@@ -10,14 +10,14 @@ Live prices and a selectable-range chart on the **Waveshare ESP32-C6-ePaper-1.54
 
 ## Controls
 
-One rule on every screen: **red = next**, **green = confirm**. On the chart, a double click is a fake buy/sell when fun mode is enabled.
+One rule on every screen: **red = next**, **green = confirm**. On the chart, a double click **or** a hold is a fake buy/sell when fun mode is enabled.
 
 | Control | Pin | Menu | Chart | Settings |
 |---------|-----|------|-------|----------|
-| **Red** | GP4 | Next item | Tap: next chart. Double: sell | Next duration |
-| **Green** | GP3 | Open | Tap: menu. Double: buy | Save |
-| **BOOT** | onboard | Next item | Tap: next chart. Double: sell | Next duration |
-| **PWR** | onboard | Open | Tap: menu. Double: buy | Save |
+| **Red** | GP4 | Next item | Tap: next chart. Double/hold: sell | Next duration |
+| **Green** | GP3 | Open | Tap: menu. Double/hold: buy | Save |
+| **BOOT** | onboard | Next item | Tap: next chart. Double/hold: sell | Next duration |
+| **PWR** | onboard | Open | Tap: menu. Double/hold: buy | Save |
 
 ## Paper trading (fake)
 
@@ -30,10 +30,13 @@ This is a toy wallet for the chart screen — not a broker. Toggle and tune it i
 #define FUN_PROFIT_MULT 1.0f
 #define FUN_LUCKY_BIAS_PCT 0.0f
 #define FUN_CURRENCY "$"
+#define FUN_GESTURE_LONG_PRESS 1    // hold to order
+#define FUN_GESTURE_DOUBLE_CLICK 1  // or double click to order
+#define FUN_LONG_PRESS_MS 600
 #define FUN_DOUBLE_CLICK_MS 450
 ```
 
-Double click **green** to buy ~`FUN_ORDER_VALUE` of the open chart. Double click **red** on that same chart to sell. Single taps keep their old meaning, but now resolve once the double-click window closes. A splash shows **BOUGHT**, **PROFIT** (starburst + coins), or **LOSS**. Cash and the open position persist in flash. Rebuild after editing the config.
+Double click **or** hold **green** to buy ~`FUN_ORDER_VALUE` of the open chart; same on **red** to sell that position. Turn off whichever gesture you don't want. Leaving double click on means single taps resolve when the double-click window closes rather than on release, so set `FUN_GESTURE_DOUBLE_CLICK` to 0 if you want instant taps back. A splash shows **BOUGHT**, **PROFIT** (starburst + coins), or **LOSS**. Cash and the open position persist in flash. Rebuild after editing the config.
 
 3-pin modules (`VCC` / `SIG` / `GND`), press = 3V3 on SIG. Leave the TF slot empty.
 

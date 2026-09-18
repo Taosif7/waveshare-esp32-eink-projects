@@ -24,6 +24,10 @@ enum class BtnEvent : uint8_t {
   FunSell = 3,
 };
 
+static constexpr bool kDoubleClickOrders = FUN_TRADING_ENABLED && FUN_GESTURE_DOUBLE_CLICK;
+// A tap can only be final once the double-click window closes.
+static constexpr unsigned int kClickMs = kDoubleClickOrders ? FUN_DOUBLE_CLICK_MS : 400;
+
 static I2cMasterBus *i2c_bus = nullptr;
 static esp_io_expander_handle_t io_expander = nullptr;
 static OneButton boot_button;
@@ -40,11 +44,25 @@ static void post_btn(BtnEvent event) {
   xQueueOverwrite(btn_queue, &event);
 }
 
+// Releasing a long press also reads as a click. Swallow clicks briefly after an
+// order fires so letting go does not navigate away from the result splash.
+static volatile uint32_t click_guard_until_ms = 0;
+
+static bool click_guarded() {
+  return static_cast<int32_t>(click_guard_until_ms - millis()) > 0;
+}
+
 static void on_next() {
+  if (click_guarded()) {
+    return;
+  }
   post_btn(BtnEvent::Next);
 }
 
 static void on_confirm() {
+  if (click_guarded()) {
+    return;
+  }
   post_btn(BtnEvent::Confirm);
 }
 
@@ -54,6 +72,50 @@ static void on_fun_buy() {
 
 static void on_fun_sell() {
   post_btn(BtnEvent::FunSell);
+}
+
+// GP3/GP4 double as EPD/SD SPI lines, so a panel refresh can make a held button
+// read as released for a few ms. OneButton's own long press loses the hold that
+// way, so track the raw level here and ignore dropouts shorter than a release.
+struct HoldWatch {
+  gpio_num_t pin;
+  bool active_low;
+  BtnEvent event;
+  uint32_t down_since_ms;
+  uint32_t last_active_ms;
+  bool fired;
+};
+
+static constexpr uint32_t kHoldReleaseMs = 80;
+
+static HoldWatch holds[] = {
+    {GREEN_BUTTON_PIN, false, BtnEvent::FunBuy, 0, 0, false},
+    {RED_BUTTON_PIN, false, BtnEvent::FunSell, 0, 0, false},
+    {PWR_BUTTON_PIN, true, BtnEvent::FunBuy, 0, 0, false},
+    {BOOT_BUTTON_PIN, true, BtnEvent::FunSell, 0, 0, false},
+};
+
+static void poll_holds() {
+  const uint32_t now = millis();
+  for (HoldWatch &h : holds) {
+    const int level = gpio_get_level(h.pin);
+    const bool pressed = h.active_low ? level == 0 : level == 1;
+    if (pressed) {
+      if (h.down_since_ms == 0) {
+        h.down_since_ms = now;
+        h.fired = false;
+      }
+      h.last_active_ms = now;
+      if (!h.fired && (now - h.down_since_ms) >= FUN_LONG_PRESS_MS) {
+        h.fired = true;
+        click_guard_until_ms = now + FUN_DOUBLE_CLICK_MS + 800;
+        post_btn(h.event);
+      }
+    } else if (h.down_since_ms != 0 && (now - h.last_active_ms) > kHoldReleaseMs) {
+      h.down_since_ms = 0;
+      h.fired = false;
+    }
+  }
 }
 
 static void configure_button_gpio(gpio_num_t pin) {
@@ -99,6 +161,9 @@ static void button_task(void *arg) {
     power_button.tick();
     red_button.tick();
     green_button.tick();
+    if (FUN_TRADING_ENABLED && FUN_GESTURE_LONG_PRESS) {
+      poll_holds();
+    }
     vTaskDelay(pdMS_TO_TICKS(5));
   }
 }
@@ -169,8 +234,8 @@ void setup() {
   boot_button.setup(BOOT_BUTTON_PIN, INPUT_PULLUP, true);
   boot_button.setDebounceMs(30);
   power_button.setDebounceMs(30);
-  boot_button.setClickMs(FUN_TRADING_ENABLED ? FUN_DOUBLE_CLICK_MS : 400);
-  power_button.setClickMs(FUN_TRADING_ENABLED ? FUN_DOUBLE_CLICK_MS : 400);
+  boot_button.setClickMs(kClickMs);
+  power_button.setClickMs(kClickMs);
 
   while (gpio_get_level(PWR_BUTTON_PIN) == 0) {
     delay(50);
@@ -178,7 +243,7 @@ void setup() {
 
   boot_button.attachClick(on_next);
   power_button.attachClick(on_confirm);
-  if (FUN_TRADING_ENABLED) {
+  if (kDoubleClickOrders) {
     boot_button.attachDoubleClick(on_fun_sell);
     power_button.attachDoubleClick(on_fun_buy);
   }
@@ -195,12 +260,12 @@ void setup() {
   green_button.setup(GREEN_BUTTON_PIN, INPUT_PULLDOWN, false);
   red_button.setDebounceMs(30);
   green_button.setDebounceMs(30);
-  red_button.setClickMs(FUN_TRADING_ENABLED ? FUN_DOUBLE_CLICK_MS : 400);
-  green_button.setClickMs(FUN_TRADING_ENABLED ? FUN_DOUBLE_CLICK_MS : 400);
+  red_button.setClickMs(kClickMs);
+  green_button.setClickMs(kClickMs);
   delay(200);
   red_button.attachClick(on_next);
   green_button.attachClick(on_confirm);
-  if (FUN_TRADING_ENABLED) {
+  if (kDoubleClickOrders) {
     red_button.attachDoubleClick(on_fun_sell);
     green_button.attachDoubleClick(on_fun_buy);
   }
