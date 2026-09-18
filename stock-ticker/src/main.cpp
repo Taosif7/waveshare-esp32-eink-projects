@@ -24,10 +24,6 @@ enum class BtnEvent : uint8_t {
   FunSell = 3,
 };
 
-static constexpr bool kDoubleClickOrders = FUN_TRADING_ENABLED && FUN_GESTURE_DOUBLE_CLICK;
-// A tap can only be final once the double-click window closes.
-static constexpr unsigned int kClickMs = kDoubleClickOrders ? FUN_DOUBLE_CLICK_MS : 400;
-
 static I2cMasterBus *i2c_bus = nullptr;
 static esp_io_expander_handle_t io_expander = nullptr;
 static OneButton boot_button;
@@ -108,7 +104,7 @@ static void poll_holds() {
       h.last_active_ms = now;
       if (!h.fired && (now - h.down_since_ms) >= FUN_LONG_PRESS_MS) {
         h.fired = true;
-        click_guard_until_ms = now + FUN_DOUBLE_CLICK_MS + 800;
+        click_guard_until_ms = now + 1000;
         post_btn(h.event);
       }
     } else if (h.down_since_ms != 0 && (now - h.last_active_ms) > kHoldReleaseMs) {
@@ -161,7 +157,7 @@ static void button_task(void *arg) {
     power_button.tick();
     red_button.tick();
     green_button.tick();
-    if (FUN_TRADING_ENABLED && FUN_GESTURE_LONG_PRESS) {
+    if (FUN_TRADING_ENABLED) {
       poll_holds();
     }
     vTaskDelay(pdMS_TO_TICKS(5));
@@ -234,8 +230,8 @@ void setup() {
   boot_button.setup(BOOT_BUTTON_PIN, INPUT_PULLUP, true);
   boot_button.setDebounceMs(30);
   power_button.setDebounceMs(30);
-  boot_button.setClickMs(kClickMs);
-  power_button.setClickMs(kClickMs);
+  boot_button.setClickMs(400);
+  power_button.setClickMs(400);
 
   while (gpio_get_level(PWR_BUTTON_PIN) == 0) {
     delay(50);
@@ -243,10 +239,6 @@ void setup() {
 
   boot_button.attachClick(on_next);
   power_button.attachClick(on_confirm);
-  if (kDoubleClickOrders) {
-    boot_button.attachDoubleClick(on_fun_sell);
-    power_button.attachDoubleClick(on_fun_buy);
-  }
 
   btn_queue = xQueueCreate(1, sizeof(BtnEvent));
   assert(btn_queue);
@@ -260,15 +252,11 @@ void setup() {
   green_button.setup(GREEN_BUTTON_PIN, INPUT_PULLDOWN, false);
   red_button.setDebounceMs(30);
   green_button.setDebounceMs(30);
-  red_button.setClickMs(kClickMs);
-  green_button.setClickMs(kClickMs);
+  red_button.setClickMs(400);
+  green_button.setClickMs(400);
   delay(200);
   red_button.attachClick(on_next);
   green_button.attachClick(on_confirm);
-  if (kDoubleClickOrders) {
-    red_button.attachDoubleClick(on_fun_sell);
-    green_button.attachDoubleClick(on_fun_buy);
-  }
 
   xTaskCreatePinnedToCore(button_task, "buttons", 3072, nullptr, 4, nullptr, 0);
 

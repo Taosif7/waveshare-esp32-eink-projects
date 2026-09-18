@@ -434,15 +434,7 @@ static void draw_chart(const AppState *state) {
       const int16_t rw = text_width("FLAT", 1);
       draw_text(static_cast<int16_t>(EPD_WIDTH - 8 - rw), 152, "FLAT", 1, DRIVER_COLOR_BLACK);
     }
-#if FUN_GESTURE_LONG_PRESS && FUN_GESTURE_DOUBLE_CLICK
-    draw_footer("2X/HOLD SELL", "2X/HOLD BUY");
-#elif FUN_GESTURE_LONG_PRESS
     draw_footer("HOLD RED SELL", "HOLD GRN BUY");
-#elif FUN_GESTURE_DOUBLE_CLICK
-    draw_footer("2X RED SELL", "2X GRN BUY");
-#else
-    draw_footer("RED NEXT", "GRN MENU");
-#endif
   } else {
     draw_footer("RED NEXT", "GRN MENU");
   }

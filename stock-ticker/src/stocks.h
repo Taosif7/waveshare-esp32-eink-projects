@@ -8,7 +8,8 @@ struct Stock {
   const char *symbol;
 };
 
-// Yahoo Finance symbols (NSE suffix .NS, indices use ^).
+// Yahoo Finance symbols (NSE suffix .NS, indices use ^, crypto is PAIR-FIAT).
+// Append new entries; the menu order is saved in flash by index.
 static const Stock kStocks[] = {
     {"NASDAQ", "^IXIC"},
     {"NIFTY 50", "^NSEI"},
@@ -20,6 +21,7 @@ static const Stock kStocks[] = {
     {"HDFC", "HDFCBANK.NS"},
     {"APPLE", "AAPL"},
     {"TESLA", "TSLA"},
+    {"BITCOIN", "BTC-USD"},
 };
 
 static constexpr uint8_t kStockCount = static_cast<uint8_t>(sizeof(kStocks) / sizeof(kStocks[0]));
