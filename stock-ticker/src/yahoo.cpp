@@ -10,8 +10,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-static constexpr size_t kBodyMax = 64 * 1024;
 static constexpr uint16_t kCollectMax = 512;
+static constexpr uint32_t kStreamStallMs = 8000;
 
 static void url_encode(const char *in, char *out, size_t out_len) {
   size_t j = 0;
@@ -35,40 +35,73 @@ static bool is_finite_number(JsonVariantConst v) {
   return isfinite(n);
 }
 
-static int read_body(HTTPClient &http, char *buf, size_t cap) {
-  NetworkClient *stream = http.getStreamPtr();
-  if (stream == nullptr || cap < 2) {
+// A day of 1-minute crypto bars runs past 200 kB, so the body is parsed as it
+// arrives instead of being buffered. This wrapper refills in blocks, both to
+// keep ArduinoJson's per-byte reads cheap and so a momentary gap in the TLS
+// stream is not mistaken for the end of the document.
+class BufferedBody : public Stream {
+ public:
+  explicit BufferedBody(NetworkClient &source) : source_(source) {
+    setTimeout(kStreamStallMs);
+  }
+
+  int available() override {
+    return fill() ? static_cast<int>(tail_ - head_) : 0;
+  }
+
+  int read() override {
+    return fill() ? buf_[head_++] : -1;
+  }
+
+  int peek() override {
+    return fill() ? buf_[head_] : -1;
+  }
+
+  size_t write(uint8_t) override {
     return 0;
   }
 
-  const int content_len = http.getSize();
-  size_t n = 0;
-  const uint32_t start = millis();
-  while (n + 1 < cap && (millis() - start) < 15000) {
-    const int avail = stream->available();
-    if (avail > 0) {
-      const size_t room = cap - 1 - n;
-      const int want = avail < static_cast<int>(room) ? avail : static_cast<int>(room);
-      const int got = stream->read(reinterpret_cast<uint8_t *>(buf + n), want);
-      if (got > 0) {
-        n += static_cast<size_t>(got);
-        if (content_len > 0 && static_cast<int>(n) >= content_len) {
-          break;
-        }
-        continue;
-      }
-    }
-
-    if (!http.connected() && stream->available() <= 0) {
-      break;
-    }
-    if (content_len > 0 && static_cast<int>(n) >= content_len) {
-      break;
-    }
-    delay(10);
+  size_t consumed() const {
+    return total_;
   }
-  buf[n] = '\0';
-  return static_cast<int>(n);
+
+ private:
+  bool fill() {
+    if (head_ < tail_) {
+      return true;
+    }
+    head_ = 0;
+    tail_ = 0;
+    const uint32_t start = millis();
+    while ((millis() - start) < kStreamStallMs) {
+      const int got = source_.read(buf_, sizeof(buf_));
+      if (got > 0) {
+        tail_ = static_cast<size_t>(got);
+        total_ += static_cast<size_t>(got);
+        return true;
+      }
+      if (!source_.connected() && source_.available() <= 0) {
+        return false;
+      }
+      delay(2);
+    }
+    return false;
+  }
+
+  NetworkClient &source_;
+  uint8_t buf_[1024];
+  size_t head_ = 0;
+  size_t tail_ = 0;
+  size_t total_ = 0;
+};
+
+static void build_filter(JsonDocument &filter) {
+  filter["chart"]["result"][0]["meta"]["regularMarketPrice"] = true;
+  filter["chart"]["result"][0]["meta"]["previousClose"] = true;
+  filter["chart"]["result"][0]["meta"]["chartPreviousClose"] = true;
+  filter["chart"]["result"][0]["meta"]["regularMarketChangePercent"] = true;
+  filter["chart"]["result"][0]["timestamp"] = true;
+  filter["chart"]["result"][0]["indicators"]["quote"][0]["close"] = true;
 }
 
 static void downsample(const float *in, uint16_t n, float *out, uint16_t *out_n) {
@@ -84,24 +117,8 @@ static void downsample(const float *in, uint16_t n, float *out, uint16_t *out_n)
   *out_n = kMaxPoints;
 }
 
-static bool parse_chart(const char *body, size_t body_len, const Stock &stock, uint32_t range_seconds,
+static bool parse_chart(const JsonDocument &doc, const Stock &stock, uint32_t range_seconds,
                         Quote *out) {
-  JsonDocument filter;
-  filter["chart"]["result"][0]["meta"]["regularMarketPrice"] = true;
-  filter["chart"]["result"][0]["meta"]["previousClose"] = true;
-  filter["chart"]["result"][0]["meta"]["chartPreviousClose"] = true;
-  filter["chart"]["result"][0]["meta"]["regularMarketChangePercent"] = true;
-  filter["chart"]["result"][0]["timestamp"] = true;
-  filter["chart"]["result"][0]["indicators"]["quote"][0]["close"] = true;
-
-  JsonDocument doc;
-  const DeserializationError err =
-      deserializeJson(doc, body, body_len, DeserializationOption::Filter(filter));
-  if (err) {
-    Serial.printf("yahoo: json %s (%u bytes)\n", err.c_str(), static_cast<unsigned>(body_len));
-    return false;
-  }
-
   JsonVariantConst result = doc["chart"]["result"][0];
   if (result.isNull()) {
     Serial.printf("yahoo: empty result for %s\n", stock.symbol);
@@ -242,25 +259,32 @@ static bool fetch_once(const Stock &stock, const RangeOption &range, Quote *out)
     return false;
   }
 
-  char *body = static_cast<char *>(malloc(kBodyMax));
-  if (body == nullptr) {
-    Serial.printf("yahoo: malloc failed, heap=%u\n", static_cast<unsigned>(ESP.getFreeHeap()));
+  NetworkClient *stream = http.getStreamPtr();
+  if (stream == nullptr) {
+    Serial.println("yahoo: no stream");
     http.end();
     return false;
   }
 
-  const int n = read_body(http, body, kBodyMax);
-  http.end();
-  Serial.printf("yahoo: got %d bytes heap=%u\n", n, static_cast<unsigned>(ESP.getFreeHeap()));
+  JsonDocument filter;
+  build_filter(filter);
 
-  bool ok = false;
-  if (n > 32) {
-    ok = parse_chart(body, static_cast<size_t>(n), stock, range.seconds, out);
-  } else {
-    Serial.println("yahoo: empty body");
+  BufferedBody body(*stream);
+  JsonDocument doc;
+  const DeserializationError err =
+      deserializeJson(doc, body, DeserializationOption::Filter(filter));
+  const size_t consumed = body.consumed();
+  http.end();
+
+  if (err) {
+    Serial.printf("yahoo: json %s after %u bytes heap=%u\n", err.c_str(),
+                  static_cast<unsigned>(consumed), static_cast<unsigned>(ESP.getFreeHeap()));
+    return false;
   }
-  free(body);
-  return ok;
+  Serial.printf("yahoo: read %u bytes heap=%u\n", static_cast<unsigned>(consumed),
+                static_cast<unsigned>(ESP.getFreeHeap()));
+
+  return parse_chart(doc, stock, range.seconds, out);
 }
 
 bool yahoo_fetch_chart(const Stock &stock, Quote *out, const RangeOption &range) {
