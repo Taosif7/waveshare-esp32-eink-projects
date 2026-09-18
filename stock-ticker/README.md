@@ -5,22 +5,42 @@ Live prices and a selectable-range chart on the **Waveshare ESP32-C6-ePaper-1.54
 ## Screens
 
 1. **Menu** — pre-configured list: NASDAQ, Nifty 50, Sensex, Reliance, Tata Motors, TCS, Infosys, HDFC Bank, Apple, Tesla, plus **SETTINGS**.
-2. **Chart** — last N minutes/hours of 1-minute closes, current price, and day change. Refreshes every 1 second.
+2. **Chart** — last N minutes/hours of 1-minute closes, current price, and day change. Refreshes every 1 second. Optional paper-trade HUD when fun mode is on.
 3. **Settings** — chart duration: 3D, 1D, 12h, 6h, 3h, 2h, 1h, 30m, 10m, 5m, 1m. Saved in flash.
 
 ## Controls
 
-| Input | Menu | Chart | Settings |
-|-------|------|-------|----------|
-| **BOOT** or external **A** (GP3) | Next item | Next chart | Next duration |
-| **PWR** or external **B** (GP4) | Open chart / settings | Back to menu | Save and back |
+One rule on every screen: **red = next**, **green = confirm**. On the chart, a double click is a fake buy/sell when fun mode is enabled.
 
-External buttons are the same active-HIGH 3-pin modules (`VCC` / `SIG` / `GND`) used on this board. Leave the TF slot empty.
+| Control | Pin | Menu | Chart | Settings |
+|---------|-----|------|-------|----------|
+| **Red** | GP4 | Next item | Tap: next chart. Double: sell | Next duration |
+| **Green** | GP3 | Open | Tap: menu. Double: buy | Save |
+| **BOOT** | onboard | Next item | Tap: next chart. Double: sell | Next duration |
+| **PWR** | onboard | Open | Tap: menu. Double: buy | Save |
 
-| Module | Header |
+## Paper trading (fake)
+
+This is a toy wallet for the chart screen — not a broker. Toggle and tune it in **one file**: `src/fun_config.h`.
+
+```c
+#define FUN_TRADING_ENABLED 1   // 0 = hide HUD, disable buy/sell
+#define FUN_STARTING_CASH 10000.0f
+#define FUN_ORDER_VALUE 2000.0f
+#define FUN_PROFIT_MULT 1.0f
+#define FUN_LUCKY_BIAS_PCT 0.0f
+#define FUN_CURRENCY "$"
+#define FUN_DOUBLE_CLICK_MS 450
+```
+
+Double click **green** to buy ~`FUN_ORDER_VALUE` of the open chart. Double click **red** on that same chart to sell. Single taps keep their old meaning, but now resolve once the double-click window closes. A splash shows **BOUGHT**, **PROFIT** (starburst + coins), or **LOSS**. Cash and the open position persist in flash. Rebuild after editing the config.
+
+3-pin modules (`VCC` / `SIG` / `GND`), press = 3V3 on SIG. Leave the TF slot empty.
+
+| Button | Header |
 |--------|--------|
-| A SIG | **GP3** |
-| B SIG | **GP4** |
+| Green SIG | **GP3** |
+| Red SIG | **GP4** |
 | VCC | **3V3** (not VSYS) |
 | GND | GND |
 

@@ -2,6 +2,8 @@
 
 #include <stdint.h>
 
+#include "fun_config.h"
+
 static constexpr uint8_t kMaxPoints = 180;
 static constexpr uint32_t kPollMs = 1000;
 static constexpr uint8_t kGhostCleanEvery = 60;
@@ -12,6 +14,14 @@ enum class Screen : uint8_t {
   Menu = 2,
   Chart = 3,
   Settings = 4,
+  FunResult = 5,
+};
+
+enum class FunResultKind : uint8_t {
+  None = 0,
+  Bought = 1,
+  SoldUp = 2,
+  SoldDown = 3,
 };
 
 struct RangeOption {
@@ -65,6 +75,14 @@ struct AppState {
   uint8_t chart_refreshes;
   uint32_t last_poll_ms;
   char status[16];
+  bool fun_holding;
+  uint8_t fun_stock;
+  float fun_cash;
+  float fun_entry;
+  float fun_qty;
+  float fun_last_pnl;
+  float fun_last_pct;
+  FunResultKind fun_result;
 };
 
 void app_init(AppState *state);
@@ -72,7 +90,10 @@ void app_mark_dirty(AppState *state, bool full);
 void app_set_screen(AppState *state, Screen screen);
 void app_on_button_a(AppState *state);
 void app_on_button_b(AppState *state);
+void app_on_fun_buy(AppState *state);
+void app_on_fun_sell(AppState *state);
 void app_wifi_ok(AppState *state);
 void app_wifi_fail(AppState *state);
 void app_quote_loaded(AppState *state, bool ok);
 bool app_should_poll(const AppState *state, uint32_t now_ms);
+float app_fun_unrealized(const AppState *state);

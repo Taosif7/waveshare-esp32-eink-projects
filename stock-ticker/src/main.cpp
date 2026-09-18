@@ -18,16 +18,18 @@
 #include "yahoo.h"
 
 enum class BtnEvent : uint8_t {
-  A = 0,
-  B = 1,
+  Next = 0,
+  Confirm = 1,
+  FunBuy = 2,
+  FunSell = 3,
 };
 
 static I2cMasterBus *i2c_bus = nullptr;
 static esp_io_expander_handle_t io_expander = nullptr;
 static OneButton boot_button;
 static OneButton power_button;
-static OneButton ext_a_button;
-static OneButton ext_b_button;
+static OneButton red_button;
+static OneButton green_button;
 static QueueHandle_t btn_queue = nullptr;
 static AppState app;
 
@@ -38,12 +40,20 @@ static void post_btn(BtnEvent event) {
   xQueueOverwrite(btn_queue, &event);
 }
 
-static void on_button_a() {
-  post_btn(BtnEvent::A);
+static void on_next() {
+  post_btn(BtnEvent::Next);
 }
 
-static void on_button_b() {
-  post_btn(BtnEvent::B);
+static void on_confirm() {
+  post_btn(BtnEvent::Confirm);
+}
+
+static void on_fun_buy() {
+  post_btn(BtnEvent::FunBuy);
+}
+
+static void on_fun_sell() {
+  post_btn(BtnEvent::FunSell);
 }
 
 static void configure_button_gpio(gpio_num_t pin) {
@@ -57,7 +67,7 @@ static void configure_button_gpio(gpio_num_t pin) {
   gpio_config(&cfg);
 }
 
-static void configure_ext_button_gpio(gpio_num_t pin) {
+static void configure_color_button_gpio(gpio_num_t pin) {
   gpio_reset_pin(pin);
   gpio_config_t cfg = {};
   cfg.pin_bit_mask = 1ULL << static_cast<uint32_t>(pin);
@@ -87,8 +97,8 @@ static void button_task(void *arg) {
   while (true) {
     boot_button.tick();
     power_button.tick();
-    ext_a_button.tick();
-    ext_b_button.tick();
+    red_button.tick();
+    green_button.tick();
     vTaskDelay(pdMS_TO_TICKS(5));
   }
 }
@@ -119,11 +129,17 @@ static bool connect_wifi(uint32_t timeout_ms) {
 }
 
 static void apply_btn(BtnEvent event) {
-  if (event == BtnEvent::A) {
-    Serial.println("A");
+  if (event == BtnEvent::FunBuy) {
+    Serial.println("FUN BUY");
+    app_on_fun_buy(&app);
+  } else if (event == BtnEvent::FunSell) {
+    Serial.println("FUN SELL");
+    app_on_fun_sell(&app);
+  } else if (event == BtnEvent::Next) {
+    Serial.println("NEXT");
     app_on_button_a(&app);
   } else {
-    Serial.println("B");
+    Serial.println("CONFIRM");
     app_on_button_b(&app);
   }
 }
@@ -153,32 +169,41 @@ void setup() {
   boot_button.setup(BOOT_BUTTON_PIN, INPUT_PULLUP, true);
   boot_button.setDebounceMs(30);
   power_button.setDebounceMs(30);
-  boot_button.setClickMs(400);
-  power_button.setClickMs(400);
+  boot_button.setClickMs(FUN_TRADING_ENABLED ? FUN_DOUBLE_CLICK_MS : 400);
+  power_button.setClickMs(FUN_TRADING_ENABLED ? FUN_DOUBLE_CLICK_MS : 400);
 
   while (gpio_get_level(PWR_BUTTON_PIN) == 0) {
     delay(50);
   }
 
-  boot_button.attachClick(on_button_a);
-  power_button.attachClick(on_button_b);
+  boot_button.attachClick(on_next);
+  power_button.attachClick(on_confirm);
+  if (FUN_TRADING_ENABLED) {
+    boot_button.attachDoubleClick(on_fun_sell);
+    power_button.attachDoubleClick(on_fun_buy);
+  }
 
   btn_queue = xQueueCreate(1, sizeof(BtnEvent));
   assert(btn_queue);
 
   PortLvgl_Start_Init();
 
-  // GP3/GP4 are shared with SD; reclaim them for external A/B buttons.
-  configure_ext_button_gpio(EXT_BUTTON_A_PIN);
-  configure_ext_button_gpio(EXT_BUTTON_B_PIN);
-  ext_a_button.setup(EXT_BUTTON_A_PIN, INPUT_PULLDOWN, false);
-  ext_b_button.setup(EXT_BUTTON_B_PIN, INPUT_PULLDOWN, false);
-  ext_a_button.setDebounceMs(30);
-  ext_b_button.setDebounceMs(30);
-  ext_a_button.setClickMs(400);
-  ext_b_button.setClickMs(400);
-  ext_a_button.attachClick(on_button_a);
-  ext_b_button.attachClick(on_button_b);
+  // GP3/GP4 are shared with SD; reclaim them for green/red after display init.
+  configure_color_button_gpio(RED_BUTTON_PIN);
+  configure_color_button_gpio(GREEN_BUTTON_PIN);
+  red_button.setup(RED_BUTTON_PIN, INPUT_PULLDOWN, false);
+  green_button.setup(GREEN_BUTTON_PIN, INPUT_PULLDOWN, false);
+  red_button.setDebounceMs(30);
+  green_button.setDebounceMs(30);
+  red_button.setClickMs(FUN_TRADING_ENABLED ? FUN_DOUBLE_CLICK_MS : 400);
+  green_button.setClickMs(FUN_TRADING_ENABLED ? FUN_DOUBLE_CLICK_MS : 400);
+  delay(200);
+  red_button.attachClick(on_next);
+  green_button.attachClick(on_confirm);
+  if (FUN_TRADING_ENABLED) {
+    red_button.attachDoubleClick(on_fun_sell);
+    green_button.attachDoubleClick(on_fun_buy);
+  }
 
   xTaskCreatePinnedToCore(button_task, "buttons", 3072, nullptr, 4, nullptr, 0);
 

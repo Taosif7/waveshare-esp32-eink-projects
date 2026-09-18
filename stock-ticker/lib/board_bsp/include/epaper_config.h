@@ -36,14 +36,10 @@
 #define BOOT_BUTTON_PIN GPIO_NUM_9
 #define PWR_BUTTON_PIN  GPIO_NUM_2
 
-/* Optional 3-pin VCC/SIG/GND modules (active HIGH). Leave TF empty. */
-#define EXT_BUTTON_A_PIN GPIO_NUM_3  /* header GP3 — same as BOOT */
-#define EXT_BUTTON_B_PIN GPIO_NUM_4  /* header GP4 — same as PWR */
-
-/* Analog joystick (leave TF empty — GP3/GP4 share SD CS/MISO). */
-#define JOY_VRX_PIN  GPIO_NUM_4   /* header GP4 */
-#define JOY_VRY_PIN  GPIO_NUM_3   /* header GP3 */
-#define JOY_SW_PIN   GPIO_NUM_16  /* header TXD */
+/* Colored buttons on the expansion header (3-pin VCC/SIG/GND, active HIGH).
+ * Leave TF empty — GP3/GP4 share SD CS/MISO. */
+#define GREEN_BUTTON_PIN  GPIO_NUM_3   /* header GP3 — Confirm */
+#define RED_BUTTON_PIN    GPIO_NUM_4   /* header GP4 — Next */
 
 #define LED_PIN         EXIO_NUM_4
 

@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "epaper_config.h"
+#include "fun_config.h"
 #include "port_display.h"
 #include "stocks.h"
 
@@ -123,6 +124,89 @@ static void draw_footer(const char *left, const char *right) {
   draw_text(static_cast<int16_t>(EPD_WIDTH - 8 - w), 184, right, 1, DRIVER_COLOR_BLACK);
 }
 
+static void format_money(char *buf, size_t n, float value) {
+  const char *sign = value < 0 ? "-" : "";
+  float mag = value < 0 ? -value : value;
+  if (mag >= 10000.0f) {
+    snprintf(buf, n, "%s%s%.0f", sign, FUN_CURRENCY, mag);
+  } else if (mag >= 1000.0f) {
+    snprintf(buf, n, "%s%s%.1f", sign, FUN_CURRENCY, mag);
+  } else {
+    snprintf(buf, n, "%s%s%.2f", sign, FUN_CURRENCY, mag);
+  }
+}
+
+static void draw_up_arrow(int16_t cx, int16_t top) {
+  const int16_t h = 46;
+  const int16_t w = 36;
+  EPD_DrawLine(cx, top, static_cast<int16_t>(cx - w / 2), static_cast<int16_t>(top + h), DRIVER_COLOR_BLACK);
+  EPD_DrawLine(cx, top, static_cast<int16_t>(cx + w / 2), static_cast<int16_t>(top + h), DRIVER_COLOR_BLACK);
+  EPD_DrawLine(static_cast<int16_t>(cx - w / 2), static_cast<int16_t>(top + h),
+               static_cast<int16_t>(cx + w / 2), static_cast<int16_t>(top + h), DRIVER_COLOR_BLACK);
+  for (int16_t y = 4; y < h - 4; y += 3) {
+    const int16_t half = static_cast<int16_t>((w * (h - y)) / (2 * h));
+    EPD_DrawHLine(static_cast<int16_t>(cx - half), static_cast<int16_t>(top + y), static_cast<int16_t>(half * 2),
+                  DRIVER_COLOR_BLACK);
+  }
+}
+
+static void draw_down_arrow(int16_t cx, int16_t top) {
+  const int16_t h = 46;
+  const int16_t w = 36;
+  EPD_DrawLine(static_cast<int16_t>(cx - w / 2), top, static_cast<int16_t>(cx + w / 2), top, DRIVER_COLOR_BLACK);
+  EPD_DrawLine(static_cast<int16_t>(cx - w / 2), top, cx, static_cast<int16_t>(top + h), DRIVER_COLOR_BLACK);
+  EPD_DrawLine(static_cast<int16_t>(cx + w / 2), top, cx, static_cast<int16_t>(top + h), DRIVER_COLOR_BLACK);
+  for (int16_t y = 4; y < h - 4; y += 3) {
+    const int16_t half = static_cast<int16_t>((w * y) / (2 * h));
+    EPD_DrawHLine(static_cast<int16_t>(cx - half), static_cast<int16_t>(top + y), static_cast<int16_t>(half * 2),
+                  DRIVER_COLOR_BLACK);
+  }
+}
+
+static void draw_starburst(int16_t cx, int16_t cy, int16_t r) {
+  EPD_DrawLine(cx, static_cast<int16_t>(cy - r), cx, static_cast<int16_t>(cy + r), DRIVER_COLOR_BLACK);
+  EPD_DrawLine(static_cast<int16_t>(cx - r), cy, static_cast<int16_t>(cx + r), cy, DRIVER_COLOR_BLACK);
+  EPD_DrawLine(static_cast<int16_t>(cx - r * 3 / 4), static_cast<int16_t>(cy - r * 3 / 4),
+               static_cast<int16_t>(cx + r * 3 / 4), static_cast<int16_t>(cy + r * 3 / 4), DRIVER_COLOR_BLACK);
+  EPD_DrawLine(static_cast<int16_t>(cx - r * 3 / 4), static_cast<int16_t>(cy + r * 3 / 4),
+               static_cast<int16_t>(cx + r * 3 / 4), static_cast<int16_t>(cy - r * 3 / 4), DRIVER_COLOR_BLACK);
+  EPD_FillCircle(static_cast<int16_t>(cx - 22), static_cast<int16_t>(cy + 8), 8, DRIVER_COLOR_BLACK);
+  EPD_FillCircle(cx, static_cast<int16_t>(cy + 14), 10, DRIVER_COLOR_BLACK);
+  EPD_FillCircle(static_cast<int16_t>(cx + 24), static_cast<int16_t>(cy + 6), 7, DRIVER_COLOR_BLACK);
+}
+
+static void draw_fun_result(const AppState *state) {
+  draw_frame();
+  char line[24];
+  if (state->fun_result == FunResultKind::Bought) {
+    draw_up_arrow(100, 18);
+    draw_text_centered(70, "BOUGHT", 2);
+    draw_text_centered(92, stock_at(state->fun_stock).name, 1);
+    format_money(line, sizeof(line), state->fun_entry);
+    draw_text_centered(108, line, 2);
+    snprintf(line, sizeof(line), "QTY %.2f", state->fun_qty);
+    draw_text_centered(132, line, 1);
+    format_money(line, sizeof(line), state->fun_cash);
+    draw_text_centered(148, line, 1);
+  } else if (state->fun_result == FunResultKind::SoldUp) {
+    draw_starburst(100, 48, 36);
+    draw_text_centered(92, "PROFIT", 2);
+    format_money(line, sizeof(line), state->fun_last_pnl);
+    draw_text_centered(114, line, 2);
+    snprintf(line, sizeof(line), "%+.2f%%", state->fun_last_pct);
+    draw_text_centered(138, line, 2);
+  } else {
+    draw_down_arrow(100, 18);
+    draw_text_centered(70, "LOSS", 2);
+    format_money(line, sizeof(line), state->fun_last_pnl);
+    draw_text_centered(108, line, 2);
+    snprintf(line, sizeof(line), "%+.2f%%", state->fun_last_pct);
+    draw_text_centered(132, line, 2);
+  }
+  draw_text_centered(168, "PAPER TRADE", 1);
+  draw_footer("ANY BTN", "BACK");
+}
+
 static void format_price(char *buf, size_t n, float price) {
   if (price >= 10000.0f) {
     snprintf(buf, n, "%.0f", price);
@@ -148,7 +232,7 @@ static void draw_wifi_fail() {
   draw_text_centered(76, "EDIT SSID IN", 1);
   draw_text_centered(92, "WIFI CONFIG H", 1);
   draw_text_centered(120, "THEN FLASH", 1);
-  draw_text_centered(148, "A OR B: RETRY", 1);
+  draw_text_centered(148, "ANY BTN: RETRY", 1);
 }
 
 static constexpr uint8_t kMenuVisible = 6;
@@ -181,7 +265,7 @@ static void draw_menu(const AppState *state) {
     }
   }
 
-  draw_footer("A NEXT", "B OPEN");
+  draw_footer("RED NEXT", "GRN OPEN");
 }
 
 static constexpr uint8_t kSettingsVisible = 6;
@@ -216,10 +300,11 @@ static void draw_settings(const AppState *state) {
     }
   }
 
-  draw_footer("A NEXT", "B SAVE");
+  draw_footer("RED NEXT", "GRN SAVE");
 }
 
-static void draw_polyline(const float *pts, uint16_t n, int16_t x, int16_t y, int16_t w, int16_t h) {
+static void draw_polyline(const float *pts, uint16_t n, int16_t x, int16_t y, int16_t w, int16_t h, bool mark,
+                          float mark_v) {
   if (n < 2 || w < 2 || h < 2) {
     return;
   }
@@ -261,6 +346,20 @@ static void draw_polyline(const float *pts, uint16_t n, int16_t x, int16_t y, in
     px = nx;
     py = ny;
   }
+
+  if (!mark) {
+    return;
+  }
+  int16_t my = map_y(mark_v);
+  if (my < y) {
+    my = y;
+  } else if (my > static_cast<int16_t>(y + h - 1)) {
+    my = static_cast<int16_t>(y + h - 1);
+  }
+  for (int16_t dx = 0; dx < w; dx += 6) {
+    const int16_t seg = dx + 3 <= w ? 3 : static_cast<int16_t>(w - dx);
+    EPD_DrawHLine(static_cast<int16_t>(x + dx), my, seg, DRIVER_COLOR_BLACK);
+  }
 }
 
 static void draw_chart(const AppState *state) {
@@ -288,23 +387,57 @@ static void draw_chart(const AppState *state) {
   const int16_t plot_x = 8;
   const int16_t plot_y = 60;
   const int16_t plot_w = EPD_WIDTH - 16;
-  const int16_t plot_h = 108;
+  const int16_t plot_h = FUN_TRADING_ENABLED ? 88 : 108;
   EPD_DrawRect(plot_x, plot_y, plot_w, plot_h, DRIVER_COLOR_BLACK);
 
   if (state->quote.valid && state->quote.n_points >= 2) {
+    const bool mark = FUN_TRADING_ENABLED && state->fun_holding && state->fun_stock == state->stock_index;
     draw_polyline(state->quote.points, state->quote.n_points, static_cast<int16_t>(plot_x + 2),
                   static_cast<int16_t>(plot_y + 2), static_cast<int16_t>(plot_w - 4),
-                  static_cast<int16_t>(plot_h - 4));
+                  static_cast<int16_t>(plot_h - 4), mark, state->fun_entry);
   } else if (state->quote.valid) {
     draw_text(plot_x + 36, plot_y + 48, "NO BARS", 1, DRIVER_COLOR_BLACK);
   }
 
+  const int16_t label_y = FUN_TRADING_ENABLED ? 164 : 172;
   char start_label[8];
   snprintf(start_label, sizeof(start_label), "-%s", range_at(state->range_index).label);
-  draw_text(8, 172, start_label, 1, DRIVER_COLOR_BLACK);
+  draw_text(8, label_y, start_label, 1, DRIVER_COLOR_BLACK);
   const int16_t nw = text_width("NOW", 1);
-  draw_text(static_cast<int16_t>(EPD_WIDTH - 8 - nw), 172, "NOW", 1, DRIVER_COLOR_BLACK);
-  draw_footer("A NEXT", "B MENU");
+  draw_text(static_cast<int16_t>(EPD_WIDTH - 8 - nw), label_y, "NOW", 1, DRIVER_COLOR_BLACK);
+
+  if (FUN_TRADING_ENABLED) {
+    char cash[16];
+    format_money(cash, sizeof(cash), state->fun_cash);
+    char hud[24];
+    snprintf(hud, sizeof(hud), "CASH %s", cash);
+    draw_text(8, 152, hud, 1, DRIVER_COLOR_BLACK);
+    if (state->fun_holding) {
+      if (state->fun_stock == state->stock_index && state->quote.valid) {
+        const float u = app_fun_unrealized(state);
+        char pnl[16];
+        format_money(pnl, sizeof(pnl), u);
+        char right[20];
+        if (u >= 0.0f) {
+          snprintf(right, sizeof(right), "+%s", pnl);
+        } else {
+          snprintf(right, sizeof(right), "%s", pnl);
+        }
+        const int16_t rw = text_width(right, 1);
+        draw_text(static_cast<int16_t>(EPD_WIDTH - 8 - rw), 152, right, 1, DRIVER_COLOR_BLACK);
+      } else {
+        const char *held = stock_at(state->fun_stock).name;
+        const int16_t rw = text_width(held, 1);
+        draw_text(static_cast<int16_t>(EPD_WIDTH - 8 - rw), 152, held, 1, DRIVER_COLOR_BLACK);
+      }
+    } else {
+      const int16_t rw = text_width("FLAT", 1);
+      draw_text(static_cast<int16_t>(EPD_WIDTH - 8 - rw), 152, "FLAT", 1, DRIVER_COLOR_BLACK);
+    }
+    draw_footer("2X RED SELL", "2X GRN BUY");
+  } else {
+    draw_footer("RED NEXT", "GRN MENU");
+  }
 }
 
 void ui_compose(const AppState *state) {
@@ -324,6 +457,9 @@ void ui_compose(const AppState *state) {
       break;
     case Screen::Settings:
       draw_settings(state);
+      break;
+    case Screen::FunResult:
+      draw_fun_result(state);
       break;
   }
 }
