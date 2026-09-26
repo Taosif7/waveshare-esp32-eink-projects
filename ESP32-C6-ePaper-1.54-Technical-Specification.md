@@ -188,6 +188,28 @@ BOOT/PWR remain backups; hold PWR still resets scores.
 
 Firmware must turn **EXIO0, EXIO1, EXIO3, EXIO5** on (high as outputs) before display/audio work (see Waveshare audio / factory examples).
 
+### 4.9 External I2C OLED (lab-verified)
+
+4-pin module on the header I2C bus, sharing it with the TCA9554, ES8311, RTC, and SHTC3. Reference sketch: `oled-hello/`.
+
+| Item | Value |
+|------|--------|
+| Controller | **SH1106** (often sold as SSD1306) |
+| Glass | 128 × 64 |
+| I2C address | `0x3C` (also accept `0x3D`) |
+| Library | U8g2 `U8G2_SH1106_128X64_NONAME_F_HW_I2C` |
+
+| OLED | Header |
+|------|--------|
+| VCC | **3V3** |
+| GND | **GND** |
+| SDA | **SDA** (GPIO18) |
+| SCL | **SCL** (GPIO8) |
+
+**Do not** power it from **VSYS** (≈5 V).
+
+**2-pixel line on the right:** the SH1106 RAM is 132 columns wide and the glass shows 128, starting at column 2. An SSD1306 driver starts at column 0, so two uncleared columns sit on the right edge. That line is a driver mismatch, not a damaged panel. The SH1106 constructor sets `x_offset = 2` and moves those columns off the glass. Confirmed on this module: the line disappeared and the picture shifted two pixels right.
+
 ---
 
 ## 5. Critical USB / GPIO warnings (ESP32-C6)
