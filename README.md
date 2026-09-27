@@ -12,6 +12,7 @@ Projects for the [Waveshare ESP32-C6-ePaper-1.54](https://www.waveshare.com/esp3
 | [`dino-oled`](dino-oled/) | **Dino OLED** — same runner on a 128×64 SH1106 I2C display |
 | [`stock-ticker`](stock-ticker/) | **Stock Ticker** — live Yahoo prices, selectable-range chart, 1 s poll over Wi-Fi |
 | [`oled-hello`](oled-hello/) | **OLED Hello** — animated HELLO WORLD on a 4-pin I2C OLED |
+| [`odyssey-oled`](odyssey-oled/) | **Odyssey** — 121-frame OLED animation looping at ~15 fps |
 
 ## Hardware
 
