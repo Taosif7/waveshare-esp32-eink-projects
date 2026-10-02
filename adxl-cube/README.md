@@ -1,6 +1,6 @@
-# ADXL cube
+# ADXL horizon
 
-Wireframe cube on the 128×64 SH1106 OLED. Tilt comes from an ADXL345 on the same I2C header as the display. Flat on the table, chip facing up, the cube shows a face. Tip the module and the cube tips with it.
+Attitude indicator on the 128×64 SH1106 OLED. An ADXL345 on the same I2C header supplies pitch and roll. The aircraft stays fixed in space. Below the horizon the earth is a world map in perspective: coasts stay small at the limb and grow as they pass under the wings. Stars expand out of that same point as you fly toward them. Tip the board and the planet moves behind the wings: nose up drops the limb, right wing down puts more earth on the right.
 
 The onboard e-paper uses SPI. This sketch talks only to the external OLED and the accelerometer.
 
@@ -29,11 +29,13 @@ The OLED and the ADXL345 share SDA and SCL. Their addresses do not overlap (OLED
 
 Leave **GP12** and **GP13** empty (USB). Do not put a TF card in the slot if you are also using GP3 or GP4.
 
-**PWR** (GPIO2) turns the board on. The sketch latches that rail, so you can let go once the cube is up. Click **PWR** again, or hold it until the panels say **OFF**, to drop the latch. On battery the board then shuts off when you let go. On USB the rails stay up, so the sketch stops on **OFF** until the next **PWR** press. Unplug USB to test a real shutdown. Hold **BOOT** (GPIO9) for about a second, then release, to restart the app.
+**PWR** (GPIO2) turns the board on. The sketch latches that rail, so you can let go once the horizon is up. Click **PWR** again, or hold it until the OLED says **OFF**, to drop the latch. On battery the board then shuts off when you let go. On USB the rails stay up, so the sketch stops on **OFF** until the next **PWR** press. Unplug USB to test a real shutdown. Hold **BOOT** (GPIO9) for about a second, then release, to restart the app. Hold the external button on **GP3** (active-high, leave the TF slot empty) to warp. Speed eases up over half a second and stays there while the button is down. The stars stretch into lines. Release and it eases back over half a second.
+
+The onboard speaker plays a low engine drone. The pitch and hiss rise with the warp and settle again when you let go.
 
 The onboard e-paper shows a warning mark and the words "Content on other display".
 
-The bottom line of the screen is acceleration in g. A still, flat module reads about `X 0  Y 0  Z +1` (Z sign follows which face is up).
+Flat on the table, chip facing up, the wings line up with the horizon. Tip the far edge down and the earth rises. Drop the right edge and ground fills the right side.
 
 If an axis tilts backwards, flip `kRollSign` or `kPitchSign` at the top of `src/main.cpp`.
 
