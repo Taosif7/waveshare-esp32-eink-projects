@@ -319,10 +319,13 @@ static bool adxlReadG(float &x, float &y, float &z) {
 
 // Pitch tips the nose, roll drops a wing. On this module Y runs along the nose
 // and X along the wings, so forward/back must not be read as a bank.
+// Held upright, -1 g on Y is level. Swing that axis onto Z before measuring.
 static void tiltFromGravity(float ax, float ay, float az, float &pitch, float &roll) {
-  roll = atan2f(ax, az) * kRollSign;
-  const float horizon = sqrtf(ax * ax + az * az);
-  pitch = atan2f(-ay, horizon) * kPitchSign;
+  const float levelY = az;
+  const float levelZ = -ay;
+  roll = atan2f(ax, levelZ) * kRollSign;
+  const float horizon = sqrtf(ax * ax + levelZ * levelZ);
+  pitch = atan2f(-levelY, horizon) * kPitchSign;
 }
 
 // Infinite ground. A fixed bitmap wrapped every few seconds, so this is a
@@ -436,6 +439,13 @@ static void strokePixel(int x, int y) {
   gStroke[(y * 128 + x) >> 3] |= static_cast<uint8_t>(1u << (x & 7));
 }
 
+static void strokeClear(int x, int y) {
+  if (x < 0 || y < 0 || x >= 128 || y >= 64) {
+    return;
+  }
+  gStroke[(y * 128 + x) >> 3] &= static_cast<uint8_t>(~(1u << (x & 7)));
+}
+
 static void strokeLine(int x0, int y0, int x1, int y1) {
   const int dx = abs(x1 - x0);
   const int sx = x0 < x1 ? 1 : -1;
@@ -463,14 +473,48 @@ static void edge(int cx, int cy, int x0, int y0, int x1, int y1) {
   strokeLine(cx + x0, cy + y0, cx + x1, cy + y1);
 }
 
-static void strokeDisc(int x0, int y0, int radius) {
-  const int limit = radius * radius;
-  for (int y = -radius; y <= radius; ++y) {
-    for (int x = -radius; x <= radius; ++x) {
-      if (x * x + y * y <= limit) {
-        strokePixel(x0 + x, y0 + y);
-      }
+static void strokeFlip(int x, int y) {
+  if (x < 0 || y < 0 || x >= 128 || y >= 64) {
+    return;
+  }
+  gStroke[(y * 128 + x) >> 3] ^= static_cast<uint8_t>(1u << (x & 7));
+}
+
+static void flipOnce(uint8_t *seen, int cx, int cy, int x, int y) {
+  const int lx = x - cx + 8;
+  const int ly = y - cy + 8;
+  if (lx >= 0 && ly >= 0 && lx < 16 && ly < 16) {
+    const int bit = ly * 16 + lx;
+    if ((seen[bit >> 3] & (1u << (bit & 7))) != 0) {
+      return;
     }
+    seen[bit >> 3] |= static_cast<uint8_t>(1u << (bit & 7));
+  }
+  strokeFlip(x, y);
+}
+
+// Invert the ring against the slices so it stays visible on both fill and gap.
+static void flipCircle(int x0, int y0, int radius) {
+  uint8_t seen[16 * 16 / 8] = {};
+  int x = 0;
+  int y = radius;
+  int d = 3 - 2 * radius;
+  while (x <= y) {
+    flipOnce(seen, x0, y0, x0 + x, y0 + y);
+    flipOnce(seen, x0, y0, x0 + y, y0 + x);
+    flipOnce(seen, x0, y0, x0 - x, y0 + y);
+    flipOnce(seen, x0, y0, x0 - y, y0 + x);
+    flipOnce(seen, x0, y0, x0 + x, y0 - y);
+    flipOnce(seen, x0, y0, x0 + y, y0 - x);
+    flipOnce(seen, x0, y0, x0 - x, y0 - y);
+    flipOnce(seen, x0, y0, x0 - y, y0 - x);
+    if (d < 0) {
+      d += 4 * x + 6;
+    } else {
+      d += 4 * (x - y) + 10;
+      --y;
+    }
+    ++x;
   }
 }
 
@@ -497,6 +541,32 @@ static void strokeCircle(int x0, int y0, int radius) {
   }
 }
 
+// Boost nozzle. The rim is eight equal slices; each frame fills every other
+// slice, and the next frame fills the ones left blank. The core stays solid.
+static void strokeBoost(int x0, int y0, int outer, int inner, bool odd) {
+  constexpr float kSlice = 0.78539816f;
+  const int outer2 = outer * outer;
+  const int inner2 = inner * inner;
+  for (int y = -outer; y <= outer; ++y) {
+    for (int x = -outer; x <= outer; ++x) {
+      const int r2 = x * x + y * y;
+      if (r2 > outer2) {
+        continue;
+      }
+      bool on = r2 <= inner2;
+      if (!on) {
+        const int slice = static_cast<int>(floorf(atan2f(static_cast<float>(y), static_cast<float>(x)) / kSlice)) & 7;
+        on = ((slice & 1) != 0) == odd;
+      }
+      if (on) {
+        strokePixel(x0 + x, y0 + y);
+      } else {
+        strokeClear(x0 + x, y0 + y);
+      }
+    }
+  }
+}
+
 static void flushStroke() {
   display.setDrawColor(2);
   for (int i = 0; i < 128 * 64; ++i) {
@@ -511,7 +581,7 @@ static void flushStroke() {
 
 // Rear view matching a wide twin-engine hull: hex body, a center booster,
 // an engine on each flank, swept wings with pointed tips. XOR inverts sky,
-// ocean, and land. The engines fill while the warp is up.
+// ocean, and land. While warping, each nozzle alternates eight rim slices.
 static void drawAircraft(int cx, int cy, bool boosting) {
   edge(cx, cy, -2, -8, 0, -13);
   edge(cx, cy, 0, -13, 2, -8);
@@ -522,19 +592,6 @@ static void drawAircraft(int cx, int cy, bool boosting) {
   edge(cx, cy, 7, 8, -7, 8);
   edge(cx, cy, -7, 8, -11, 0);
   edge(cx, cy, -11, 0, -8, -8);
-
-  if (boosting) {
-    strokeDisc(cx, cy, 6);
-    strokeDisc(cx - 18, cy, 5);
-    strokeDisc(cx + 18, cy, 5);
-  } else {
-    strokeCircle(cx, cy, 6);
-    strokeCircle(cx, cy, 3);
-    strokeCircle(cx - 18, cy, 5);
-    strokeCircle(cx + 18, cy, 5);
-    strokeCircle(cx - 18, cy, 2);
-    strokeCircle(cx + 18, cy, 2);
-  }
 
   edge(cx, cy, -11, -4, -20, -4);
   edge(cx, cy, -20, -4, -52, -20);
@@ -548,6 +605,26 @@ static void drawAircraft(int cx, int cy, bool boosting) {
   edge(cx, cy, 36, -4, 20, 2);
   edge(cx, cy, 20, 4, 34, 12);
   edge(cx, cy, 34, 12, 20, 8);
+
+  if (boosting) {
+    const bool odd = (millis() / 90) & 1;
+    strokeBoost(cx, cy, 6, 3, odd);
+    strokeBoost(cx - 18, cy, 5, 2, odd);
+    strokeBoost(cx + 18, cy, 5, 2, odd);
+    flipCircle(cx, cy, 6);
+    flipCircle(cx, cy, 3);
+    flipCircle(cx - 18, cy, 5);
+    flipCircle(cx - 18, cy, 2);
+    flipCircle(cx + 18, cy, 5);
+    flipCircle(cx + 18, cy, 2);
+  } else {
+    strokeCircle(cx, cy, 6);
+    strokeCircle(cx, cy, 3);
+    strokeCircle(cx - 18, cy, 5);
+    strokeCircle(cx + 18, cy, 5);
+    strokeCircle(cx - 18, cy, 2);
+    strokeCircle(cx + 18, cy, 2);
+  }
   flushStroke();
 }
 

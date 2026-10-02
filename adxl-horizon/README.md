@@ -35,7 +35,7 @@ The onboard speaker plays a low engine drone. The pitch and hiss rise with the w
 
 The onboard e-paper shows a warning mark and the words "Content on other display".
 
-Flat on the table, chip facing up, the wings line up with the horizon. Tip the far edge down and the earth rises. Drop the right edge and ground fills the right side.
+Hold the board upright so Y reads about -1 g. That pose is level, and the wings line up with the horizon. Tip the far edge down and the earth rises. Drop the right edge and ground fills the right side.
 
 If an axis tilts backwards, flip `kRollSign` or `kPitchSign` at the top of `src/main.cpp`.
 
