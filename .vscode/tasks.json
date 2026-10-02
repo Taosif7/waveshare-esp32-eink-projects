@@ -2,31 +2,16 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "flash: rps-game",
+      "label": "flash: adxl-cube",
       "type": "process",
       "command": "${env:HOME}/.platformio/penv/bin/pio",
-      "args": ["run", "-t", "upload"],
+      "args": [
+        "run",
+        "-t",
+        "upload"
+      ],
       "options": {
-        "cwd": "${workspaceFolder}/rps-game"
-      },
-      "group": "build",
-      "problemMatcher": [],
-      "presentation": {
-        "echo": true,
-        "reveal": "always",
-        "focus": true,
-        "panel": "shared",
-        "showReuseMessage": false,
-        "clear": true
-      }
-    },
-    {
-      "label": "flash: modak-catcher",
-      "type": "process",
-      "command": "${env:HOME}/.platformio/penv/bin/pio",
-      "args": ["run", "-t", "upload"],
-      "options": {
-        "cwd": "${workspaceFolder}/modak-catcher"
+        "cwd": "${workspaceFolder}/adxl-cube"
       },
       "group": "build",
       "problemMatcher": [],
@@ -43,7 +28,11 @@
       "label": "flash: dino-game",
       "type": "process",
       "command": "${env:HOME}/.platformio/penv/bin/pio",
-      "args": ["run", "-t", "upload"],
+      "args": [
+        "run",
+        "-t",
+        "upload"
+      ],
       "options": {
         "cwd": "${workspaceFolder}/dino-game"
       },
@@ -62,7 +51,11 @@
       "label": "flash: dino-oled",
       "type": "process",
       "command": "${env:HOME}/.platformio/penv/bin/pio",
-      "args": ["run", "-t", "upload"],
+      "args": [
+        "run",
+        "-t",
+        "upload"
+      ],
       "options": {
         "cwd": "${workspaceFolder}/dino-oled"
       },
@@ -78,50 +71,16 @@
       }
     },
     {
-      "label": "flash: stock-ticker",
+      "label": "flash: modak-catcher",
       "type": "process",
       "command": "${env:HOME}/.platformio/penv/bin/pio",
-      "args": ["run", "-t", "upload"],
+      "args": [
+        "run",
+        "-t",
+        "upload"
+      ],
       "options": {
-        "cwd": "${workspaceFolder}/stock-ticker"
-      },
-      "group": "build",
-      "problemMatcher": [],
-      "presentation": {
-        "echo": true,
-        "reveal": "always",
-        "focus": true,
-        "panel": "shared",
-        "showReuseMessage": false,
-        "clear": true
-      }
-    },
-    {
-      "label": "flash: oled-hello",
-      "type": "process",
-      "command": "${env:HOME}/.platformio/penv/bin/pio",
-      "args": ["run", "-t", "upload"],
-      "options": {
-        "cwd": "${workspaceFolder}/oled-hello"
-      },
-      "group": "build",
-      "problemMatcher": [],
-      "presentation": {
-        "echo": true,
-        "reveal": "always",
-        "focus": true,
-        "panel": "shared",
-        "showReuseMessage": false,
-        "clear": true
-      }
-    },
-    {
-      "label": "flash: adxl-cube",
-      "type": "process",
-      "command": "${env:HOME}/.platformio/penv/bin/pio",
-      "args": ["run", "-t", "upload"],
-      "options": {
-        "cwd": "${workspaceFolder}/adxl-cube"
+        "cwd": "${workspaceFolder}/modak-catcher"
       },
       "group": "build",
       "problemMatcher": [],
@@ -138,9 +97,82 @@
       "label": "flash: odyssey-oled",
       "type": "process",
       "command": "${env:HOME}/.platformio/penv/bin/pio",
-      "args": ["run", "-t", "upload"],
+      "args": [
+        "run",
+        "-t",
+        "upload"
+      ],
       "options": {
         "cwd": "${workspaceFolder}/odyssey-oled"
+      },
+      "group": "build",
+      "problemMatcher": [],
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": true,
+        "panel": "shared",
+        "showReuseMessage": false,
+        "clear": true
+      }
+    },
+    {
+      "label": "flash: oled-hello",
+      "type": "process",
+      "command": "${env:HOME}/.platformio/penv/bin/pio",
+      "args": [
+        "run",
+        "-t",
+        "upload"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}/oled-hello"
+      },
+      "group": "build",
+      "problemMatcher": [],
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": true,
+        "panel": "shared",
+        "showReuseMessage": false,
+        "clear": true
+      }
+    },
+    {
+      "label": "flash: rps-game",
+      "type": "process",
+      "command": "${env:HOME}/.platformio/penv/bin/pio",
+      "args": [
+        "run",
+        "-t",
+        "upload"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}/rps-game"
+      },
+      "group": "build",
+      "problemMatcher": [],
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": true,
+        "panel": "shared",
+        "showReuseMessage": false,
+        "clear": true
+      }
+    },
+    {
+      "label": "flash: stock-ticker",
+      "type": "process",
+      "command": "${env:HOME}/.platformio/penv/bin/pio",
+      "args": [
+        "run",
+        "-t",
+        "upload"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}/stock-ticker"
       },
       "group": "build",
       "problemMatcher": [],

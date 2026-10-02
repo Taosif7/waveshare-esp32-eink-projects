@@ -1,0 +1,14 @@
+---
+description: Keep the workspace Flash run items in sync with PlatformIO projects.
+alwaysApply: true
+---
+
+# Flash run configs follow the projects
+
+Each top-level folder with a `platformio.ini` is a project and must have a Flash run item.
+
+When you add, rename, or remove a project, regenerate the configs in the same change:
+
+`python3 tools/sync_flash_configs.py`
+
+Do not edit `.vscode/launch.json` or `.vscode/tasks.json` by hand. `python3 tools/sync_flash_configs.py --check` exits non-zero when those files do not match the project folders.

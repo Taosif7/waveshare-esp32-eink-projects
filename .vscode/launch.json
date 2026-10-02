@@ -2,84 +2,132 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "rps-game",
+      "name": "adxl-cube",
       "type": "node",
       "request": "launch",
-      "preLaunchTask": "flash: rps-game",
-      "runtimeArgs": ["-e", "process.exit(0)"],
+      "preLaunchTask": "flash: adxl-cube",
+      "runtimeArgs": [
+        "-e",
+        "process.exit(0)"
+      ],
       "console": "internalConsole",
       "internalConsoleOptions": "neverOpen",
-      "presentation": { "group": "Flash", "order": 1 }
-    },
-    {
-      "name": "modak-catcher",
-      "type": "node",
-      "request": "launch",
-      "preLaunchTask": "flash: modak-catcher",
-      "runtimeArgs": ["-e", "process.exit(0)"],
-      "console": "internalConsole",
-      "internalConsoleOptions": "neverOpen",
-      "presentation": { "group": "Flash", "order": 2 }
+      "presentation": {
+        "group": "Flash",
+        "order": 1
+      }
     },
     {
       "name": "dino-game",
       "type": "node",
       "request": "launch",
       "preLaunchTask": "flash: dino-game",
-      "runtimeArgs": ["-e", "process.exit(0)"],
+      "runtimeArgs": [
+        "-e",
+        "process.exit(0)"
+      ],
       "console": "internalConsole",
       "internalConsoleOptions": "neverOpen",
-      "presentation": { "group": "Flash", "order": 3 }
+      "presentation": {
+        "group": "Flash",
+        "order": 2
+      }
     },
     {
       "name": "dino-oled",
       "type": "node",
       "request": "launch",
       "preLaunchTask": "flash: dino-oled",
-      "runtimeArgs": ["-e", "process.exit(0)"],
+      "runtimeArgs": [
+        "-e",
+        "process.exit(0)"
+      ],
       "console": "internalConsole",
       "internalConsoleOptions": "neverOpen",
-      "presentation": { "group": "Flash", "order": 4 }
+      "presentation": {
+        "group": "Flash",
+        "order": 3
+      }
     },
     {
-      "name": "stock-ticker",
+      "name": "modak-catcher",
       "type": "node",
       "request": "launch",
-      "preLaunchTask": "flash: stock-ticker",
-      "runtimeArgs": ["-e", "process.exit(0)"],
+      "preLaunchTask": "flash: modak-catcher",
+      "runtimeArgs": [
+        "-e",
+        "process.exit(0)"
+      ],
       "console": "internalConsole",
       "internalConsoleOptions": "neverOpen",
-      "presentation": { "group": "Flash", "order": 5 }
-    },
-    {
-      "name": "oled-hello",
-      "type": "node",
-      "request": "launch",
-      "preLaunchTask": "flash: oled-hello",
-      "runtimeArgs": ["-e", "process.exit(0)"],
-      "console": "internalConsole",
-      "internalConsoleOptions": "neverOpen",
-      "presentation": { "group": "Flash", "order": 6 }
-    },
-    {
-      "name": "adxl-cube",
-      "type": "node",
-      "request": "launch",
-      "preLaunchTask": "flash: adxl-cube",
-      "runtimeArgs": ["-e", "process.exit(0)"],
-      "console": "internalConsole",
-      "internalConsoleOptions": "neverOpen",
-      "presentation": { "group": "Flash", "order": 7 }
+      "presentation": {
+        "group": "Flash",
+        "order": 4
+      }
     },
     {
       "name": "odyssey-oled",
       "type": "node",
       "request": "launch",
       "preLaunchTask": "flash: odyssey-oled",
-      "runtimeArgs": ["-e", "process.exit(0)"],
+      "runtimeArgs": [
+        "-e",
+        "process.exit(0)"
+      ],
       "console": "internalConsole",
       "internalConsoleOptions": "neverOpen",
-      "presentation": { "group": "Flash", "order": 8 }
+      "presentation": {
+        "group": "Flash",
+        "order": 5
+      }
+    },
+    {
+      "name": "oled-hello",
+      "type": "node",
+      "request": "launch",
+      "preLaunchTask": "flash: oled-hello",
+      "runtimeArgs": [
+        "-e",
+        "process.exit(0)"
+      ],
+      "console": "internalConsole",
+      "internalConsoleOptions": "neverOpen",
+      "presentation": {
+        "group": "Flash",
+        "order": 6
+      }
+    },
+    {
+      "name": "rps-game",
+      "type": "node",
+      "request": "launch",
+      "preLaunchTask": "flash: rps-game",
+      "runtimeArgs": [
+        "-e",
+        "process.exit(0)"
+      ],
+      "console": "internalConsole",
+      "internalConsoleOptions": "neverOpen",
+      "presentation": {
+        "group": "Flash",
+        "order": 7
+      }
+    },
+    {
+      "name": "stock-ticker",
+      "type": "node",
+      "request": "launch",
+      "preLaunchTask": "flash: stock-ticker",
+      "runtimeArgs": [
+        "-e",
+        "process.exit(0)"
+      ],
+      "console": "internalConsole",
+      "internalConsoleOptions": "neverOpen",
+      "presentation": {
+        "group": "Flash",
+        "order": 8
+      }
     }
   ]
 }
