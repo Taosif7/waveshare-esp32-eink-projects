@@ -18,6 +18,22 @@
       }
     },
     {
+      "name": "adxl-horizon",
+      "type": "node",
+      "request": "launch",
+      "preLaunchTask": "flash: adxl-horizon",
+      "runtimeArgs": [
+        "-e",
+        "process.exit(0)"
+      ],
+      "console": "internalConsole",
+      "internalConsoleOptions": "neverOpen",
+      "presentation": {
+        "group": "Flash",
+        "order": 2
+      }
+    },
+    {
       "name": "dino-game",
       "type": "node",
       "request": "launch",
@@ -30,7 +46,7 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 2
+        "order": 3
       }
     },
     {
@@ -46,7 +62,7 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 3
+        "order": 4
       }
     },
     {
@@ -62,7 +78,7 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 4
+        "order": 5
       }
     },
     {
@@ -78,7 +94,7 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 5
+        "order": 6
       }
     },
     {
@@ -94,7 +110,7 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 6
+        "order": 7
       }
     },
     {
@@ -110,7 +126,7 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 7
+        "order": 8
       }
     },
     {
@@ -126,7 +142,7 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 8
+        "order": 9
       }
     }
   ]
