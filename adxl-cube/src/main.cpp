@@ -1,0 +1,462 @@
+#include <Arduino.h>
+#include <Wire.h>
+#include <U8g2lib.h>
+#include <esp_system.h>
+#include <math.h>
+
+#include "eink_warn.h"
+
+// Header I2C on the ESP32-C6-ePaper-1.54. OLED and ADXL345 share this bus.
+static constexpr int kSdaPin = 18;
+static constexpr int kSclPin = 8;
+static constexpr int kBootPin = 9;
+static constexpr int kPwrPin = 2;
+static constexpr uint32_t kRestartHoldMs = 800;
+
+static constexpr uint8_t kAdxlAddressLow = 0x53;   // SDO / ALT tied to GND
+static constexpr uint8_t kAdxlAddressHigh = 0x1D;  // SDO / ALT tied to 3V3
+static constexpr uint8_t kAdxlDeviceId = 0xE5;
+
+// Onboard TCA9554. EXIO5 is the battery soft-power latch.
+static constexpr uint8_t kTca9554Address = 0x20;
+static constexpr uint8_t kTcaOutputReg = 0x01;
+static constexpr uint8_t kTcaConfigReg = 0x03;
+static constexpr uint8_t kBatteryHoldBit = 1 << 5;
+static constexpr uint8_t kEpdPowerBit = 1 << 0;
+
+static constexpr uint8_t kRegDeviceId = 0x00;
+static constexpr uint8_t kRegBwRate = 0x2C;
+static constexpr uint8_t kRegPowerCtl = 0x2D;
+static constexpr uint8_t kRegDataFormat = 0x31;
+static constexpr uint8_t kRegDataX0 = 0x32;
+
+// Full-resolution mode is 256 counts per g at every range. ±4 g leaves
+// headroom when the module is shaken, without clipping a normal tilt.
+static constexpr uint8_t kDataFormat4gFullRes = 0x09;
+static constexpr uint8_t kBwRate100Hz = 0x0A;
+static constexpr uint8_t kPowerMeasure = 0x08;
+static constexpr float kCountsPerG = 256.0f;
+
+// Flip a sign if that axis tilts opposite the module.
+static constexpr float kRollSign = 1.0f;
+static constexpr float kPitchSign = 1.0f;
+
+#if defined(OLED_SH1106)
+static U8G2_SH1106_128X64_NONAME_F_HW_I2C display(
+    U8G2_R0, U8X8_PIN_NONE, kSclPin, kSdaPin);
+#else
+static U8G2_SSD1306_128X64_NONAME_F_HW_I2C display(
+    U8G2_R0, U8X8_PIN_NONE, kSclPin, kSdaPin);
+#endif
+
+static uint8_t gAdxlAddress = 0;
+static char gAdxlStatus[32] = "ADXL345 not found";
+
+struct Vec3 {
+  float x;
+  float y;
+  float z;
+};
+
+static bool writeDevReg(uint8_t addr, uint8_t reg, uint8_t value) {
+  Wire.beginTransmission(addr);
+  Wire.write(reg);
+  Wire.write(value);
+  return Wire.endTransmission() == 0;
+}
+
+static bool readDevReg(uint8_t addr, uint8_t reg, uint8_t &value) {
+  Wire.beginTransmission(addr);
+  Wire.write(reg);
+  if (Wire.endTransmission(true) != 0) {
+    return false;
+  }
+  if (Wire.requestFrom(static_cast<uint8_t>(addr), static_cast<uint8_t>(1), static_cast<uint8_t>(true)) != 1) {
+    return false;
+  }
+  value = static_cast<uint8_t>(Wire.read());
+  return true;
+}
+
+// Vendor shutdown drives EXIO5 low and leaves it there. A read-modify-write
+// can put the latch back high if the read fails, so these writes are absolute.
+static bool writeRails(bool batteryOn, bool epdOn) {
+  uint8_t output = 0;
+  if (batteryOn) {
+    output |= kBatteryHoldBit;
+  }
+  if (epdOn) {
+    output |= kEpdPowerBit;
+  }
+  const uint8_t config = static_cast<uint8_t>(~(kBatteryHoldBit | kEpdPowerBit));
+  return writeDevReg(kTca9554Address, kTcaOutputReg, output) &&
+         writeDevReg(kTca9554Address, kTcaConfigReg, config);
+}
+
+// Pressing PWR powers the board only while the button is down. EXIO5 has to
+// stay high after that, or the rail drops as soon as the button is released.
+static void holdBatteryPower() {
+  for (int attempt = 0; attempt < 8; ++attempt) {
+    if (writeRails(true, true)) {
+      Serial.println("Battery hold on (TCA9554 EXIO5).");
+      return;
+    }
+    delay(30);
+  }
+  Serial.println("TCA9554 0x20 did not latch EXIO5. Battery drops when the button is released.");
+}
+
+// Drop EXIO5 only after "OFF" is on both panels. Deep sleep is not used:
+// with USB plugged in it resets the chip, setup runs again, and the latch
+// turns straight back on.
+static void powerOff() {
+  Serial.println("PWR off");
+  Serial.flush();
+
+  display.clearBuffer();
+  display.setFont(u8g2_font_helvB12_tr);
+  display.drawStr(46, 36, "OFF");
+  display.sendBuffer();
+
+  for (int attempt = 0; attempt < 5; ++attempt) {
+    if (writeRails(false, true)) {
+      break;
+    }
+    delay(20);
+  }
+
+  bool sawRelease = false;
+  while (true) {
+    const bool pressed = digitalRead(kPwrPin) == LOW;
+    if (!pressed) {
+      sawRelease = true;
+    } else if (sawRelease) {
+      esp_restart();
+    }
+    delay(20);
+  }
+}
+
+static void pollPowerButton() {
+  static bool seenRelease = false;
+  static bool down = false;
+  static uint32_t downAt = 0;
+
+  const bool pressed = digitalRead(kPwrPin) == LOW;
+  // The press that turned the board on is still down. Wait it out.
+  if (!seenRelease) {
+    if (!pressed) {
+      seenRelease = true;
+    }
+    return;
+  }
+  if (pressed) {
+    if (!down) {
+      down = true;
+      downAt = millis();
+      Serial.println("PWR down");
+    } else if (millis() - downAt >= 800) {
+      // Still held. This is the vendor gesture: long-press, then release.
+      powerOff();
+    }
+    return;
+  }
+  if (down && millis() - downAt >= 40) {
+    powerOff();
+  }
+  down = false;
+}
+
+static bool devicePresent(uint8_t addr) {
+  Wire.beginTransmission(addr);
+  return Wire.endTransmission() == 0;
+}
+
+static void scanI2c() {
+  Serial.println("I2C scan (onboard chips show up too):");
+  int found = 0;
+  for (uint8_t addr = 1; addr < 127; ++addr) {
+    if (!devicePresent(addr)) {
+      continue;
+    }
+    Serial.printf("  0x%02X\n", addr);
+    found++;
+  }
+  if (found == 0) {
+    Serial.println("  (none)");
+    snprintf(gAdxlStatus, sizeof(gAdxlStatus), "I2C bus empty");
+  } else {
+    snprintf(gAdxlStatus, sizeof(gAdxlStatus), "ADXL not on I2C");
+  }
+}
+
+static bool writeReg(uint8_t reg, uint8_t value) {
+  Wire.beginTransmission(gAdxlAddress);
+  Wire.write(reg);
+  Wire.write(value);
+  return Wire.endTransmission() == 0;
+}
+
+static int readRegs(uint8_t reg, uint8_t *buf, size_t len) {
+  // Full stop between the register pointer and the read. Some ADXL345
+  // boards never answer a repeated start, so the ID read looks missing.
+  // Bit 7 of the register address is the multi-byte flag. Without it the
+  // chip repeats the first data byte and a 6-byte sample never completes.
+  if (len > 1) {
+    reg |= 0x80;
+  }
+  Wire.setClock(100000);
+  Wire.beginTransmission(gAdxlAddress);
+  Wire.write(reg);
+  if (Wire.endTransmission(true) != 0) {
+    return -1;
+  }
+  const uint8_t got = Wire.requestFrom(
+      static_cast<uint8_t>(gAdxlAddress), static_cast<uint8_t>(len), static_cast<uint8_t>(true));
+  size_t i = 0;
+  while (i < got && i < len && Wire.available()) {
+    buf[i++] = static_cast<uint8_t>(Wire.read());
+  }
+  Wire.setClock(400000);
+  return static_cast<int>(i);
+}
+
+static uint8_t waitForOled() {
+  for (;;) {
+    if (devicePresent(0x3C)) {
+      return 0x3C;
+    }
+    if (devicePresent(0x3D)) {
+      return 0x3D;
+    }
+    scanI2c();
+    Serial.println("No OLED at 0x3C or 0x3D. VCC -> 3V3, GND -> GND, SDA -> SDA, SCL -> SCL.");
+    pollPowerButton();
+    delay(1000);
+  }
+}
+
+static bool adxlProbe(uint8_t addr) {
+  gAdxlAddress = addr;
+  if (!devicePresent(addr)) {
+    return false;
+  }
+  uint8_t id = 0;
+  if (readRegs(kRegDeviceId, &id, 1) != 1) {
+    Serial.printf("0x%02X ACKed but DEVID read failed\n", addr);
+    return false;
+  }
+  Serial.printf("0x%02X DEVID 0x%02X\n", addr, id);
+  return id == kAdxlDeviceId;
+}
+
+static bool adxlBegin() {
+  if (!adxlProbe(kAdxlAddressLow) && !adxlProbe(kAdxlAddressHigh)) {
+    gAdxlAddress = 0;
+    return false;
+  }
+  // Standby, then measure. Data registers stay at zero until measure is set.
+  if (!writeReg(kRegPowerCtl, 0x00)) {
+    return false;
+  }
+  if (!writeReg(kRegDataFormat, kDataFormat4gFullRes)) {
+    return false;
+  }
+  if (!writeReg(kRegBwRate, kBwRate100Hz)) {
+    return false;
+  }
+  if (!writeReg(kRegPowerCtl, kPowerMeasure)) {
+    return false;
+  }
+  delay(2);
+  return true;
+}
+
+// Hold BOOT, then release. Restarting while the pin is still low would
+// strap the chip into the ROM download mode instead of this app.
+static void pollBootRestart() {
+  static bool down = false;
+  static bool armed = false;
+  static uint32_t downAt = 0;
+
+  const bool pressed = digitalRead(kBootPin) == LOW;
+  if (pressed) {
+    if (!down) {
+      down = true;
+      armed = false;
+      downAt = millis();
+    } else if (!armed && millis() - downAt >= kRestartHoldMs) {
+      armed = true;
+    }
+    return;
+  }
+  if (down && armed) {
+    Serial.println("BOOT held, restarting");
+    Serial.flush();
+    esp_restart();
+  }
+  down = false;
+  armed = false;
+}
+
+static bool adxlReadG(float &x, float &y, float &z) {
+  uint8_t raw[6];
+  if (readRegs(kRegDataX0, raw, sizeof(raw)) != static_cast<int>(sizeof(raw))) {
+    return false;
+  }
+  const int16_t rx = static_cast<int16_t>(raw[0] | (raw[1] << 8));
+  const int16_t ry = static_cast<int16_t>(raw[2] | (raw[3] << 8));
+  const int16_t rz = static_cast<int16_t>(raw[4] | (raw[5] << 8));
+  x = rx / kCountsPerG;
+  y = ry / kCountsPerG;
+  z = rz / kCountsPerG;
+  return true;
+}
+
+// Pitch tips the nose, roll drops a wing. Both come from the gravity vector.
+static void tiltFromGravity(float ax, float ay, float az, float &pitch, float &roll) {
+  roll = atan2f(ay, az) * kRollSign;
+  const float horizon = sqrtf(ay * ay + az * az);
+  pitch = atan2f(-ax, horizon) * kPitchSign;
+}
+
+static Vec3 rotateTilt(Vec3 v, float pitch, float roll) {
+  const float cp = cosf(pitch);
+  const float sp = sinf(pitch);
+  const float cr = cosf(roll);
+  const float sr = sinf(roll);
+
+  const float x1 = v.x * cp + v.z * sp;
+  const float z1 = -v.x * sp + v.z * cp;
+  const float y2 = v.y * cr - z1 * sr;
+  const float z2 = v.y * sr + z1 * cr;
+  return {x1, y2, z2};
+}
+
+static void project(Vec3 v, int cx, int cy, int &sx, int &sy) {
+  constexpr float kCameraZ = 3.4f;
+  constexpr float kFocal = 46.0f;
+  const float depth = v.z + kCameraZ;
+  const float scale = kFocal / depth;
+  sx = cx + static_cast<int>(lroundf(v.x * scale));
+  sy = cy - static_cast<int>(lroundf(v.y * scale));
+}
+
+static void drawCube(float pitch, float roll) {
+  constexpr float kSize = 0.82f;
+  const Vec3 model[8] = {
+      {-kSize, -kSize, -kSize}, {kSize, -kSize, -kSize},
+      {kSize, kSize, -kSize},   {-kSize, kSize, -kSize},
+      {-kSize, -kSize, kSize},  {kSize, -kSize, kSize},
+      {kSize, kSize, kSize},    {-kSize, kSize, kSize},
+  };
+  static const uint8_t kEdges[12][2] = {
+      {0, 1}, {1, 2}, {2, 3}, {3, 0}, {4, 5}, {5, 6},
+      {6, 7}, {7, 4}, {0, 4}, {1, 5}, {2, 6}, {3, 7},
+  };
+
+  const int cx = display.getDisplayWidth() / 2;
+  const int cy = 28;
+  int sx[8];
+  int sy[8];
+  for (int i = 0; i < 8; ++i) {
+    project(rotateTilt(model[i], pitch, roll), cx, cy, sx[i], sy[i]);
+  }
+  for (int e = 0; e < 12; ++e) {
+    const int a = kEdges[e][0];
+    const int b = kEdges[e][1];
+    display.drawLine(sx[a], sy[a], sx[b], sy[b]);
+  }
+}
+
+static void drawReadout(float x, float y, float z, bool live) {
+  display.setFont(u8g2_font_4x6_tr);
+  char line[32];
+  if (live) {
+    snprintf(line, sizeof(line), "X%+.2f Y%+.2f Z%+.2f", x, y, z);
+  } else {
+    snprintf(line, sizeof(line), "%s", gAdxlStatus);
+  }
+  const int yBase = display.getDisplayHeight() - 1;
+  display.drawStr(0, yBase, line);
+}
+
+void setup() {
+  Serial.begin(115200);
+
+  pinMode(kBootPin, INPUT_PULLUP);
+  gpio_reset_pin(static_cast<gpio_num_t>(kPwrPin));
+  pinMode(kPwrPin, INPUT_PULLUP);
+
+  Wire.begin(kSdaPin, kSclPin);
+  Wire.setClock(100000);
+  holdBatteryPower();
+  eink_begin();
+  Wire.setClock(400000);
+
+  const uint8_t oledAddr = waitForOled();
+  Serial.printf("OLED at 0x%02X\n", oledAddr);
+  display.setI2CAddress(static_cast<uint8_t>(oledAddr << 1));
+  display.begin();
+  Wire.setClock(400000);
+
+  if (adxlBegin()) {
+    Serial.printf("ADXL345 at 0x%02X\n", gAdxlAddress);
+  } else {
+    scanI2c();
+    Serial.println("No ADXL345 at 0x53 or 0x1D.");
+    Serial.println("CS -> 3V3 (I2C mode), SDO -> GND for 0x53, SDA -> SDA, SCL -> SCL, VCC -> 3V3.");
+  }
+}
+
+void loop() {
+  static float gx = 0.0f;
+  static float gy = 0.0f;
+  static float gz = 1.0f;
+  static float pitch = 0.0f;
+  static float roll = 0.0f;
+  static uint32_t lastLogMs = 0;
+  static bool live = false;
+
+  pollBootRestart();
+  pollPowerButton();
+
+  const uint32_t now = millis();
+  float ax = 0.0f;
+  float ay = 0.0f;
+  float az = 0.0f;
+  if (gAdxlAddress != 0 && adxlReadG(ax, ay, az)) {
+    live = true;
+    constexpr float kSmooth = 0.28f;
+    gx += (ax - gx) * kSmooth;
+    gy += (ay - gy) * kSmooth;
+    gz += (az - gz) * kSmooth;
+
+    const float mag = sqrtf(gx * gx + gy * gy + gz * gz);
+    // Keep the last pose in free-fall, where tilt is undefined.
+    if (mag > 0.25f) {
+      tiltFromGravity(gx, gy, gz, pitch, roll);
+    }
+  } else if (gAdxlAddress == 0 && now - lastLogMs >= 2000) {
+    lastLogMs = now;
+    if (adxlBegin()) {
+      Serial.printf("ADXL345 at 0x%02X\n", gAdxlAddress);
+    } else {
+      Serial.println(gAdxlStatus);
+    }
+  } else {
+    live = gAdxlAddress != 0;
+  }
+
+  display.clearBuffer();
+  drawCube(pitch, roll);
+  drawReadout(gx, gy, gz, live && gAdxlAddress != 0);
+  display.sendBuffer();
+
+  if (live && now - lastLogMs >= 500) {
+    lastLogMs = now;
+    Serial.printf("g  x=%+.2f  y=%+.2f  z=%+.2f  raw %+.2f %+.2f %+.2f\n", gx, gy, gz, ax, ay, az);
+  }
+
+  delay(33);
+}

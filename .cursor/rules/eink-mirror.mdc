@@ -1,0 +1,13 @@
+---
+description: When an external display is used, mirror its text onto the onboard e-ink with a warning symbol.
+alwaysApply: true
+---
+
+# Onboard e-ink mirrors the other display
+
+This board has a built-in 200×200 e-paper panel. Any sketch that also drives an external display (OLED, LCD, or another panel) must keep the e-ink in sync with that display's text.
+
+- Turn e-paper power on first: TCA9554 EXIO0 high, then `PortDisplay_Init()` / `EPD_Init()` from `dino-game/lib/board_bsp`.
+- Draw a warning mark (triangle with an exclamation) and the exact words `Content on other display`. Do not copy the other display's live text onto the e-ink.
+- Paint that notice once. A full refresh takes about two seconds.
+- Reference: `adxl-cube/src/eink_warn.cpp`.
