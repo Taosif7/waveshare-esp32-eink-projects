@@ -319,10 +319,14 @@ static bool adxlReadG(float &x, float &y, float &z) {
 
 // Pitch tips the nose, roll drops a wing. On this module Y runs along the nose
 // and X along the wings, so forward/back must not be read as a bank.
-// Held upright, -1 g on Y is level. Swing that axis onto Z before measuring.
+// Level is 45% of the way from flat toward upright, not the full 90°.
+static constexpr float kLevelTilt = 0.45f * 1.5707963f;
+
 static void tiltFromGravity(float ax, float ay, float az, float &pitch, float &roll) {
-  const float levelY = az;
-  const float levelZ = -ay;
+  const float c = cosf(kLevelTilt);
+  const float s = sinf(kLevelTilt);
+  const float levelY = ay * c + az * s;
+  const float levelZ = -ay * s + az * c;
   roll = atan2f(ax, levelZ) * kRollSign;
   const float horizon = sqrtf(ax * ax + levelZ * levelZ);
   pitch = atan2f(-levelY, horizon) * kPitchSign;
@@ -580,7 +584,7 @@ static void flushStroke() {
 }
 
 // Rear view matching a wide twin-engine hull: hex body, a center booster,
-// an engine on each flank, swept wings with pointed tips. XOR inverts sky,
+// an engine on each flank, straight upper wings and lower spikes. XOR inverts sky,
 // ocean, and land. While warping, each nozzle alternates eight rim slices.
 static void drawAircraft(int cx, int cy, bool boosting) {
   edge(cx, cy, -2, -8, 0, -13);
@@ -593,16 +597,14 @@ static void drawAircraft(int cx, int cy, bool boosting) {
   edge(cx, cy, -7, 8, -11, 0);
   edge(cx, cy, -11, 0, -8, -8);
 
-  edge(cx, cy, -11, -4, -20, -4);
-  edge(cx, cy, -20, -4, -52, -20);
-  edge(cx, cy, -52, -20, -36, -4);
-  edge(cx, cy, -36, -4, -20, 2);
+  edge(cx, cy, -12, -4, -46, -4);
+  edge(cx, cy, -46, -4, -46, -2);
+  edge(cx, cy, -46, -2, -12, -2);
   edge(cx, cy, -20, 4, -34, 12);
   edge(cx, cy, -34, 12, -20, 8);
-  edge(cx, cy, 11, -4, 20, -4);
-  edge(cx, cy, 20, -4, 52, -20);
-  edge(cx, cy, 52, -20, 36, -4);
-  edge(cx, cy, 36, -4, 20, 2);
+  edge(cx, cy, 12, -4, 46, -4);
+  edge(cx, cy, 46, -4, 46, -2);
+  edge(cx, cy, 46, -2, 12, -2);
   edge(cx, cy, 20, 4, 34, 12);
   edge(cx, cy, 34, 12, 20, 8);
 
