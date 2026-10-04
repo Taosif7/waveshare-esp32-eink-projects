@@ -22,4 +22,6 @@ Waveshare **ESP32-C6-ePaper-1.54** (200×200 B/W e-paper). See each project's `R
 
 ## Board reference
 
-See [ESP32-C6-ePaper-1.54-Technical-Specification.md](ESP32-C6-ePaper-1.54-Technical-Specification.md) for pinout, USB caveats, joystick wiring, and bring-up notes.
+Component wiring and lab notes live in [`component-specifications/`](component-specifications/), one file per part (this board, the 1.54″ e-paper, SH1106, button, joystick, ADXL345).
+
+See also [ESP32-C6-ePaper-1.54-Technical-Specification.md](ESP32-C6-ePaper-1.54-Technical-Specification.md) for USB caveats, toolchain, and bring-up.
