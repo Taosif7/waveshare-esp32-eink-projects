@@ -1,6 +1,6 @@
 # ADXL345 accelerometer
 
-A small I2C accelerometer on the same header bus as the OLED. Used by `adxl-cube` (wireframe cube) and `adxl-horizon` (attitude indicator). Both sketches talk to it with raw register reads on `Wire`, not a separate driver library.
+A small I2C accelerometer on the same header bus as the OLED. Used by `adxl-cube` (wireframe cube), `adxl-tunnel` (wireframe tunnel), and `adxl-horizon` (attitude indicator). The sketches talk to it with raw register reads on `Wire`, not a separate driver library.
 
 ## Wiring
 
@@ -43,11 +43,15 @@ A still module, flat, chip facing up, reads about `X 0  Y 0  Z +1`. The Z sign f
 
 ## How each sketch turns g into a picture
 
-Both expose `kRollSign` and `kPitchSign` at the top of `src/main.cpp`. Flip the one whose axis tilts backwards.
+Each sketch exposes `kRollSign` and `kPitchSign` at the top of `src/main.cpp`. Flip the one whose axis tilts backwards.
 
 ### Cube (`adxl-cube`)
 
 Roll is `atan2(ay, az)`, pitch is `atan2(-ax, hypot(ay, az))`. Flat on the table shows a face of the cube. The bottom line of the OLED prints the three axes in g.
+
+### Tunnel (`adxl-tunnel`)
+
+Same roll and pitch as the cube. Flat on the table, the rings are centered and travel toward the glass, reappearing at the far end. Pitch moves the vanishing point left and right, roll moves it up and down. The OLED is only the grid; the g values stay on the serial log.
 
 ### Horizon (`adxl-horizon`)
 

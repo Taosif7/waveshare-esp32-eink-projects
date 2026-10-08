@@ -48,6 +48,29 @@
       }
     },
     {
+      "label": "flash: adxl-tunnel",
+      "type": "process",
+      "command": "${env:HOME}/.platformio/penv/bin/pio",
+      "args": [
+        "run",
+        "-t",
+        "upload"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}/adxl-tunnel"
+      },
+      "group": "build",
+      "problemMatcher": [],
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": true,
+        "panel": "shared",
+        "showReuseMessage": false,
+        "clear": true
+      }
+    },
+    {
       "label": "flash: dino-game",
       "type": "process",
       "command": "${env:HOME}/.platformio/penv/bin/pio",

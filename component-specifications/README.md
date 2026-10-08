@@ -23,6 +23,7 @@ Lab notes for the hardware this repo actually drives. Pin numbers, addresses, an
 | `oled-hello` | warning notice | UI | | | |
 | `odyssey-oled` | | UI | | | |
 | `adxl-cube` | warning notice | UI | BOOT (restart), PWR (power latch) | | tilt |
+| `adxl-tunnel` | warning notice | UI | BOOT (restart), PWR (power latch) | | tilt |
 | `adxl-horizon` | warning notice | UI | BOOT, PWR, external on GP3 (warp) | | attitude |
 
 Sketches that draw on the OLED still paint the onboard e-paper once: a warning mark and the words `Content on other display`.

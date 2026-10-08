@@ -71,7 +71,7 @@ These sit on the board. External modules share the I2C bus with them.
 | 4 | LED |
 | 5 | VBAT / system power hold |
 
-A normal sketch turns EXIO0, EXIO1, EXIO3, and EXIO5 on as outputs and drives them high before display or audio work. EXIO5 is the battery latch: the board is only powered while PWR is held down, until firmware sets EXIO5 high. `adxl-cube` and `adxl-horizon` do that latch themselves, then drop EXIO5 on a later PWR press so the board can shut off on battery. On USB the rails stay up, so those sketches sit on an OFF screen until the next PWR press.
+A normal sketch turns EXIO0, EXIO1, EXIO3, and EXIO5 on as outputs and drives them high before display or audio work. EXIO5 is the battery latch: the board is only powered while PWR is held down, until firmware sets EXIO5 high. `adxl-cube`, `adxl-tunnel`, and `adxl-horizon` do that latch themselves, then drop EXIO5 on a later PWR press so the board can shut off on battery. On USB the rails stay up, so those sketches sit on an OFF screen until the next PWR press.
 
 ### I2C
 

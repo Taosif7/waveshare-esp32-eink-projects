@@ -51,7 +51,7 @@ There is no touch controller on this panel. `EPD_TP_RST_PIN` and `EPD_TP_INT_PIN
 
 ## Warning when another display is the UI
 
-`adxl-cube` and `adxl-horizon` (and the same pattern is required for any sketch that also drives an OLED or LCD):
+`adxl-cube`, `adxl-tunnel`, and `adxl-horizon` (and the same pattern is required for any sketch that also drives an OLED or LCD):
 
 1. Turn e-paper power on first: TCA9554 EXIO0 high, then `PortDisplay_Init()` / `EPD_Init()`.
 2. Draw a warning triangle with an exclamation mark and the exact words `Content on other display`.
@@ -67,4 +67,4 @@ Reference implementation: `adxl-cube/src/eink_warn.cpp`.
 | `modak-catcher` | Partial refresh during play, full base-plane refresh to clear ghosts. |
 | `dino-game` | Partial refresh at about 1/5 of the browser pace, because a frame is ~0.3 s. |
 | `stock-ticker` | Menu, chart, and settings. Refreshes on a 1 s poll, so most updates are partial. |
-| `adxl-cube`, `adxl-horizon` | One-shot warning. The moving picture is on the OLED. |
+| `adxl-cube`, `adxl-tunnel`, `adxl-horizon` | One-shot warning. The moving picture is on the OLED. |
