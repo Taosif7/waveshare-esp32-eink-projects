@@ -53,7 +53,7 @@ These sit on the board. External modules share the I2C bus with them.
 | Block | Part | How the sketches reach it |
 |-------|------|---------------------------|
 | GPIO expander | TCA9554 at `0x20` (`ESP_IO_EXPANDER_I2C_TCA9554_ADDRESS_000`) | I2C. See the EXIO table below |
-| Audio codec | ES8311 | I2C plus I2S. Used by `rps-game` (SFX) and `adxl-horizon` (engine drone) |
+| Audio codec | ES8311 | I2C plus I2S. Used by `rps-game` (SFX), `adxl-horizon`, and `adxl-ridge` (engine drone) |
 | Amp enable | TCA9554 EXIO3 | Must be high before the speaker makes sound |
 | RTC | PCF85063 at `0x51` | On the I2C bus. Not used by the current sketches |
 | Temp / humidity | SHTC3 at `0x70` | On the I2C bus. Not used by the current sketches |
@@ -71,7 +71,7 @@ These sit on the board. External modules share the I2C bus with them.
 | 4 | LED |
 | 5 | VBAT / system power hold |
 
-A normal sketch turns EXIO0, EXIO1, EXIO3, and EXIO5 on as outputs and drives them high before display or audio work. EXIO5 is the battery latch: the board is only powered while PWR is held down, until firmware sets EXIO5 high. `adxl-cube`, `adxl-tunnel`, and `adxl-horizon` do that latch themselves, then drop EXIO5 on a later PWR press so the board can shut off on battery. On USB the rails stay up, so those sketches sit on an OFF screen until the next PWR press.
+A normal sketch turns EXIO0, EXIO1, EXIO3, and EXIO5 on as outputs and drives them high before display or audio work. EXIO5 is the battery latch: the board is only powered while PWR is held down, until firmware sets EXIO5 high. `adxl-cube`, `adxl-tunnel`, `adxl-horizon`, and `adxl-ridge` do that latch themselves, then drop EXIO5 on a later PWR press so the board can shut off on battery. On USB the rails stay up, so those sketches sit on an OFF screen until the next PWR press. `adxl-ridge` also drops the latch from the menu item Exit.
 
 ### I2C
 

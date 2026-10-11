@@ -15,6 +15,7 @@ Projects for the [Waveshare ESP32-C6-ePaper-1.54](https://www.waveshare.com/esp3
 | [`adxl-cube`](adxl-cube/) | **ADXL cube** — wireframe cube on the OLED that tilts with an ADXL345 |
 | [`adxl-tunnel`](adxl-tunnel/) | **ADXL tunnel** — concentric wireframe tunnel on the OLED that steers with an ADXL345 |
 | [`adxl-horizon`](adxl-horizon/) | **ADXL horizon** — attitude indicator on the OLED, driven by an ADXL345 |
+| [`adxl-ridge`](adxl-ridge/) | **ADXL ridge** — topographic mountain flight on the OLED, steered by an ADXL345 |
 | [`odyssey-oled`](odyssey-oled/) | **Odyssey** — 121-frame OLED animation looping at ~15 fps |
 
 ## Hardware

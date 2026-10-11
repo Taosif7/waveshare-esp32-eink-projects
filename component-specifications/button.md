@@ -11,7 +11,7 @@ Three kinds show up in these projects: the two onboard buttons, a single externa
 
 Both are momentary switches to ground. `OneButton` is used with `activeLow = true` where the library is linked (`rps-game`, `modak-catcher`, `stock-ticker`). Debounce in those games is 30 ms; a click window is 400 ms. PWR long-press is 900 ms in Ink Duel and the catcher.
 
-BOOT is also the ROM download strap. Holding it while the chip resets enters the serial bootloader. `adxl-cube`, `adxl-tunnel`, and `adxl-horizon` only restart after BOOT has been held about 800 ms **and then released**, so the restart does not land in download mode.
+BOOT is also the ROM download strap. Holding it while the chip resets enters the serial bootloader. `adxl-cube`, `adxl-tunnel`, `adxl-horizon`, and `adxl-ridge` only restart after BOOT has been held about 800 ms **and then released**, so the restart does not land in download mode.
 
 PWR is the soft power key when this board runs from the battery. The rail stays up only while the button is down, until firmware sets TCA9554 EXIO5 high. See [esp32-c6-epaper-1.54.md](esp32-c6-epaper-1.54.md).
 
@@ -24,6 +24,7 @@ PWR is the soft power key when this board runs from the battery. The rail stays 
 | `dino-game`, `dino-oled` | Same gestures as the external button | not a game control |
 | `stock-ticker` | Same as the red button (next) | Same as the green button (confirm) |
 | `adxl-cube`, `adxl-tunnel`, `adxl-horizon` | Hold ~1 s, then release: restart the app | Latches power on at boot. A later click, or a hold of about 800 ms, drops the latch and shows OFF |
+| `adxl-ridge` | Short: confirm Fly or Exit. Hold ~1 s, then release: restart | Same latch. Click, hold, or the menu item Exit drops the latch and shows OFF |
 
 Poll onboard buttons from a background task. A full e-paper refresh blocks the main loop for about two seconds, and a click in that window is otherwise missed.
 
@@ -57,6 +58,8 @@ Do not move this signal to GP12 or GP13.
 
 `adxl-horizon` uses the same GP3 module as a warp hold: speed eases up over about half a second while SIG is high, and eases back when it is released. It is not a click.
 
+`adxl-ridge` uses it two ways. In the menu, a click switches between Fly and Exit. In flight, a hold is the throttle, with the same half-second ease up and down. Leave the TF slot empty.
+
 ## Two external buttons (stock ticker)
 
 Same 3-pin modules, both active-high, both with pull-downs. Leave the TF slot empty. GP4 is also e-paper MISO, so the sketch times holds from the raw pin level. SPI traffic on that pin would otherwise look like a release and cancel a long press.
@@ -72,5 +75,5 @@ BOOT copies red. PWR copies green. Fun-mode hold time is `FUN_LONG_PRESS_MS` (60
 
 GP3 cannot be a button and the joystick Y axis at the same time. Projects pick one:
 
-- Button on GP3: `dino-game`, `dino-oled`, `stock-ticker` (green), `adxl-horizon` (warp)
+- Button on GP3: `dino-game`, `dino-oled`, `stock-ticker` (green), `adxl-horizon` (warp), `adxl-ridge` (menu and throttle)
 - Joystick VRy on GP3: `rps-game`, `modak-catcher`

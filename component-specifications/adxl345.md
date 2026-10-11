@@ -1,6 +1,6 @@
 # ADXL345 accelerometer
 
-A small I2C accelerometer on the same header bus as the OLED. Used by `adxl-cube` (wireframe cube), `adxl-tunnel` (wireframe tunnel), and `adxl-horizon` (attitude indicator). The sketches talk to it with raw register reads on `Wire`, not a separate driver library.
+A small I2C accelerometer on the same header bus as the OLED. Used by `adxl-cube` (wireframe cube), `adxl-tunnel` (wireframe tunnel), `adxl-horizon` (attitude indicator), and `adxl-ridge` (topographic flight). The sketches talk to it with raw register reads on `Wire`, not a separate driver library.
 
 ## Wiring
 
@@ -57,7 +57,11 @@ Same roll and pitch as the cube. Flat on the table, the rings are centered and t
 
 The "level" pose is not flat on the table. Tip the board about halfway from flat toward upright (about 0.45 × π/2). In that pose Y is about **−0.65 g**, the wings line up with the horizon, and further pitch and roll move the horizon around the aircraft. Nose up drops the limb. Right wing down puts more ground on the right.
 
-The external button on GP3 is a warp hold for this sketch only. It is not part of the accelerometer. See [button.md](button.md).
+The external button on GP3 is a warp hold for this sketch. It is not part of the accelerometer. See [button.md](button.md).
+
+### Ridge (`adxl-ridge`)
+
+Same level pose as the horizon. Bank turns the heading, so a ridge you passed is still there when you come back. Nose up climbs high enough to clear the tall crests; nose down drops toward the valley. The picture is a wireframe grid of a seeded height field. Flying into a crest glitches the OLED until the plane climbs or turns clear. GP3 holds the throttle in flight and clicks between Fly and Exit in the menu. Exit drops the power latch.
 
 ## If it does not show up
 
