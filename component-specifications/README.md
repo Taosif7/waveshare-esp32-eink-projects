@@ -27,6 +27,7 @@ Lab notes for the hardware this repo actually drives. Pin numbers, addresses, an
 | `adxl-tunnel` | warning notice | UI | BOOT (restart), PWR (power latch) | | tilt |
 | `adxl-horizon` | warning notice | UI | BOOT, PWR, external on GP3 (warp) | | attitude |
 | `adxl-ridge` | warning notice | UI | BOOT (menu), PWR (off), external on GP3 (menu / throttle) | | flight |
+| `space-shooter` | C6: warning notice. C3: none | UI, portrait 64×128 | C6: BOOT and RXD. C3: GPIO3, BOOT optional | Move, click pauses | Star lean and ship bank |
 
 Sketches that draw on the OLED still paint the onboard e-paper once: a warning mark and the words `Content on other display`.
 
@@ -41,7 +42,7 @@ The 2×6 header only has a few free pins. These assignments are the ones the ske
 | GP3 | 3 | Joystick VRy, or one active-high button. Also SD card chip-select |
 | GP4 | 4 | Joystick VRx, or a second active-high button. Also SD card MISO and e-paper MISO |
 | TXD | 16 | Joystick click (SW), active-low |
-| RXD | 17 | Free in these sketches |
+| RXD | 17 | Active-high fire button in `space-shooter`. Free in the other sketches |
 | GP9 | 9 | Onboard BOOT. Also on the header |
 | 3V3 / GND | — | Power for every external module |
 

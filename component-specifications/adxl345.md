@@ -63,6 +63,12 @@ The external button on GP3 is a warp hold for this sketch. It is not part of the
 
 Same level pose as the horizon. Bank turns the heading, so a ridge you passed is still there when you come back. Nose up climbs high enough to clear the tall crests; nose down drops toward the valley. The picture is a wireframe grid under stars that grow out of the distance and streak with the throttle. Flying into a crest stops the flight: the OLED tears, then CRASH stays on the glass until BOOT opens the menu. Fly backs the plane off the crest. GP3 holds the throttle in flight and clicks between Fly and Exit in the menu. Exit drops the power latch.
 
+### Shooter (`space-shooter`)
+
+The joystick still flies the ship. Roll shifts and shears the starfield: near stars move farther than far ones. Pitch leans the field up and down. The ship sprite banks left, level, or right from that roll, mixed with horizontal stick. If the ADXL345 does not answer, the stars do not warp and the ship banks from the stick alone. Signs are `kRollSign` and `kPitchSign` at the top of `space-shooter/src/main.cpp`. Flat on the table is level (no warp). Right-wing-down is positive roll before the sign flip.
+
+On the ESP32-C6 the bus is SDA GPIO18 and SCL GPIO8. On the ESP32-C3 Super Mini it is SDA GPIO6 and SCL GPIO7, the same wires as the OLED. CS to 3V3 and SDO to GND are unchanged.
+
 ## If it does not show up
 
 The serial log prints an I2C scan, then either `ADXL345 at 0x53` (or `0x1D`) or the wiring reminder: CS to 3V3, SDO to GND for `0x53`, SDA to SDA, SCL to SCL, VCC to 3V3.

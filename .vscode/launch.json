@@ -162,6 +162,22 @@
       }
     },
     {
+      "name": "space-shooter",
+      "type": "node",
+      "request": "launch",
+      "preLaunchTask": "flash: space-shooter",
+      "runtimeArgs": [
+        "-e",
+        "process.exit(0)"
+      ],
+      "console": "internalConsole",
+      "internalConsoleOptions": "neverOpen",
+      "presentation": {
+        "group": "Flash",
+        "order": 11
+      }
+    },
+    {
       "name": "stock-ticker",
       "type": "node",
       "request": "launch",
@@ -174,7 +190,7 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 11
+        "order": 12
       }
     }
   ]
