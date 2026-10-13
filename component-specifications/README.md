@@ -10,6 +10,7 @@ Lab notes for the hardware this repo actually drives. Pin numbers, addresses, an
 | [button.md](button.md) | Onboard BOOT and PWR, plus the external 3-pin button modules |
 | [joystick.md](joystick.md) | Analog stick on the expansion header |
 | [adxl345.md](adxl345.md) | ADXL345 accelerometer on the shared I2C header |
+| [esp32-c3-mini-1.md](esp32-c3-mini-1.md) | Espressif ESP32-C3-MINI-1 module: identity from a USB read, and the pads it brings out |
 
 ## Which project uses what
 
