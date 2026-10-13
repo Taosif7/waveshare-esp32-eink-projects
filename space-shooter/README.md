@@ -2,7 +2,7 @@
 
 A vertical shooter on the **128×64 SH1106** I2C OLED, rotated to portrait so the glass is **64 wide × 128 tall**. Waves of dome saucers slide and step down, a few peel off into a dive, asteroids burst into pixel debris, and every fifth wave is a boss. The onboard e-paper is painted once with a warning mark and the words "Content on other display".
 
-Sprites are original 1-bit art in that chunky saucer style: glass dome, little face, dithered hull, arrow ship, cross stars. High scores (top 3), difficulty, and the sound toggle are kept in NVS under the namespace `shooter`.
+Sprites are original 1-bit art in that chunky saucer style: glass dome, little face, dithered hull, arrow ship, cross stars. Saucers are 12×10, four across. The boss is the same saucer scaled up. High scores (top 3), difficulty, and the sound toggle are kept in NVS under the namespace `shooter`.
 
 The sketch aims at a steady **30 fps** (`33 ms` frames). A full SH1106 buffer on 400 kHz I2C is most of that budget, so a late frame is skipped rather than stacked.
 

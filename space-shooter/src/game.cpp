@@ -6,7 +6,7 @@
 #include "sound.h"
 #include "sprites.h"
 
-static_assert(kSaucerW == 16 && kSaucerH == 13, "saucer sprite");
+static_assert(kSaucerW == 12 && kSaucerH == 10, "saucer sprite");
 static_assert(kShipW == 15 && kShipH == 17, "ship sprite");
 
 namespace {
@@ -777,7 +777,7 @@ void collide(Game *game) {
       int x = 0;
       int y = 0;
       inv_pixel(game, &game->inv[i], &x, &y);
-      if (overlap(bx, by, 1, 4, x + 1, y + 1, kSaucerW - 2, kSaucerH - 2)) {
+      if (overlap(bx, by, 1, 4, x, y, kSaucerW, kSaucerH)) {
         kill_invader(game, &game->inv[i]);
         spent = true;
       }

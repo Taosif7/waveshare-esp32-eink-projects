@@ -13,9 +13,9 @@ constexpr int kHeartX = 46;
 constexpr int kLivesX = 54;
 constexpr int kWaveX = 27;
 
-constexpr int kCols = 3;
-constexpr int kStrideX = 17;
-constexpr int kStrideY = 15;
+constexpr int kCols = 4;
+constexpr int kStrideX = 14;
+constexpr int kStrideY = 12;
 
 constexpr int kTitleY = 2;
 constexpr int kTitle2Y = 14;
@@ -43,7 +43,7 @@ constexpr int kPauseItemY0 = 58;
 constexpr int kPauseItemDy = 10;
 constexpr int kPauseTextX = 14;
 
-constexpr int kMaxInvaders = 12;
+constexpr int kMaxInvaders = 16;
 constexpr int kMaxPlayerShots = 3;
 constexpr int kMaxEnemyShots = 6;
 constexpr int kMaxRocks = 3;
