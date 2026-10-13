@@ -186,10 +186,12 @@ Input read_input() {
   seen_click = clicks;
   int16_t roll = 0;
   int16_t pitch = 0;
-  if (tilt_present() && tilt_sample(&roll, &pitch)) {
+  int16_t heave = 0;
+  if (tilt_present() && tilt_sample(&roll, &pitch, &heave)) {
     input.tilt_ok = true;
     input.tilt_x = static_cast<int16_t>(roll * kRollSign);
     input.tilt_y = static_cast<int16_t>(pitch * kPitchSign);
+    input.tilt_z = heave;
   }
   return input;
 }
@@ -220,7 +222,8 @@ void setup() {
   Wire.setClock(400000);
 
   if (tilt_begin()) {
-    Serial.printf("ADXL345 at 0x%02X. Tilt leans the stars.\n", tilt_address());
+    Serial.printf("ADXL345 at 0x%02X. Tilt leans the stars. A hard shake scatters enemy shots.\n",
+                  tilt_address());
   } else {
     Serial.printf("ADXL345 not found. SDA GPIO%d, SCL GPIO%d, CS -> 3V3, SDO -> GND, VCC -> 3V3.\n",
                   kOledSda, kOledScl);

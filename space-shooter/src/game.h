@@ -56,13 +56,13 @@ constexpr int kMaxGhosts = 144;
 
 enum class Screen : uint8_t { Menu, Scores, Playing, Paused, GameOver };
 enum class Difficulty : uint8_t { Easy, Normal, Hard };
-enum class InvState : uint8_t { Empty, Formed, Diving, Returning };
+enum class InvState : uint8_t { Empty, Formed, Diving, Returning, Fleeing };
 
 struct Invader {
   InvState state;
   int16_t x;
   int16_t y;
-  int16_t base_x;
+  int16_t base_x;  // home x while diving; sideways speed while fleeing
   uint8_t phase;
   uint8_t burst;
   uint8_t col;
@@ -115,6 +115,7 @@ struct Input {
   bool click_edge;
   int16_t tilt_x;
   int16_t tilt_y;
+  int16_t tilt_z;
   bool tilt_ok;
 };
 
@@ -163,8 +164,15 @@ struct Game {
   bool tilt_seen;
   uint8_t tilt_miss;
   uint8_t shake;
+  int8_t shake_amp;
   int8_t shake_x;
   int8_t shake_y;
+  int16_t grav_x;
+  int16_t grav_y;
+  int16_t grav_z;
+  bool grav_set;
+  bool shake_hot;
+  uint8_t scatter_cd;
   uint8_t flash;
   uint8_t ghost_i;
   bool power_on;

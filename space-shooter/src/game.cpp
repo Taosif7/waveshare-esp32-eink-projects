@@ -16,6 +16,9 @@ constexpr int kJoySpan = 1400;
 constexpr int kMaxV = 32;
 constexpr int kPlayerBulletV = -112;
 constexpr int kScoreCap = 99999;
+// Sudden motion past the slow tilt. 256 counts is 1 g.
+constexpr int kShakeAt = 512;
+constexpr int kScatterCd = 90;
 
 constexpr int8_t kSin[32] = {
     0, 3, 6, 9, 12, 14, 16, 17, 18, 17, 16, 14, 12, 9, 6, 3,
@@ -138,12 +141,17 @@ void age_ghosts(Game *game) {
   }
 }
 
-void kick_shake(Game *game, int frames) {
-  if (frames <= game->shake) {
+void kick_shake(Game *game, int frames, int amp) {
+  if (frames <= game->shake && amp <= game->shake_amp) {
     return;
   }
-  game->shake = static_cast<uint8_t>(frames);
-  game->shake_x = 1;
+  if (frames > game->shake) {
+    game->shake = static_cast<uint8_t>(frames);
+  }
+  if (amp > game->shake_amp) {
+    game->shake_amp = static_cast<int8_t>(amp);
+  }
+  game->shake_x = game->shake_amp;
   game->shake_y = 0;
 }
 
@@ -155,13 +163,18 @@ void tick_juice(Game *game) {
   if (game->shake == 0) {
     return;
   }
+  int amp = game->shake_amp;
+  if (amp < 1) {
+    amp = 1;
+  }
   const int phase = game->shake & 3;
-  game->shake_x = (phase & 1) != 0 ? 1 : -1;
-  game->shake_y = (phase & 2) != 0 ? 1 : -1;
+  game->shake_x = static_cast<int8_t>((phase & 1) != 0 ? amp : -amp);
+  game->shake_y = static_cast<int8_t>((phase & 2) != 0 ? amp : -amp);
   game->shake--;
   if (game->shake == 0) {
     game->shake_x = 0;
     game->shake_y = 0;
+    game->shake_amp = 1;
   }
 }
 
@@ -298,7 +311,7 @@ void burst_at(Game *game, int px, int py, int count, int life) {
     bit->life = static_cast<uint8_t>(life);
   }
   if (count >= 10) {
-    kick_shake(game, 6);
+    kick_shake(game, 6, 1);
   }
 }
 
@@ -331,6 +344,19 @@ void fire_enemy(Game *game, int x, int y, int w, int h, int vx, int vy) {
   shot->y = static_cast<int16_t>((y + h) * kSub);
   shot->vx = static_cast<int16_t>(vx);
   shot->vy = static_cast<int16_t>(vy);
+}
+
+void start_flee(Game *game, Invader *inv) {
+  int x = 0;
+  int y = 0;
+  inv_pixel(game, inv, &x, &y);
+  inv->state = InvState::Fleeing;
+  inv->x = static_cast<int16_t>(x * kSub);
+  inv->y = static_cast<int16_t>(y * kSub);
+  int vx = x + kSaucerW / 2 < kScreenW / 2 ? -40 : 40;
+  vx += rand_n(13) - 6;
+  inv->base_x = static_cast<int16_t>(vx);
+  inv->burst = 0;
 }
 
 void start_dive(Game *game, Invader *inv) {
@@ -441,7 +467,7 @@ void hurt(Game *game) {
   if (game->iframes > 0) {
     return;
   }
-  kick_shake(game, 6);
+  kick_shake(game, 6, 1);
   if (game->shield) {
     game->shield = false;
     game->iframes = 20;
@@ -667,6 +693,14 @@ void move_divers(Game *game) {
       }
       if (iabs(inv->x - tx) <= 24 && iabs(inv->y - ty) <= 24) {
         inv->state = InvState::Formed;
+      }
+    } else if (inv->state == InvState::Fleeing) {
+      inv->x = static_cast<int16_t>(inv->x + inv->base_x);
+      inv->y = static_cast<int16_t>(inv->y - 28);
+      const int x = inv->x >> 4;
+      const int y = inv->y >> 4;
+      if (y + kSaucerH < 0 || x + kSaucerW < 0 || x >= kScreenW) {
+        inv->state = InvState::Empty;
       }
     }
   }
@@ -914,7 +948,7 @@ void collide(Game *game) {
           game->boss_on = false;
           add_score(game, 250 + game->wave * 10);
           game->flash = 3;
-          kick_shake(game, 8);
+          kick_shake(game, 8, 1);
           burst_at(game, x + kBossW / 2, y + kBossH / 2, 16, 18);
           sound_play(Sfx::Explode);
         }
@@ -1021,7 +1055,93 @@ void check_wave(Game *game) {
   }
 }
 
-void step_play(Game *game, const Input *input) {
+bool sense_shake(Game *game, const Input *input) {
+  if (game->scatter_cd > 0) {
+    game->scatter_cd--;
+  }
+  if (!input->tilt_ok) {
+    if (game->tilt_miss > 8) {
+      game->grav_set = false;
+      game->shake_hot = false;
+    }
+    return false;
+  }
+  if (!game->grav_set) {
+    game->grav_x = input->tilt_x;
+    game->grav_y = input->tilt_y;
+    game->grav_z = input->tilt_z;
+    game->grav_set = true;
+    game->shake_hot = false;
+    return false;
+  }
+  const int rx = input->tilt_x - game->grav_x;
+  const int ry = input->tilt_y - game->grav_y;
+  const int rz = input->tilt_z - game->grav_z;
+  game->grav_x = static_cast<int16_t>((game->grav_x * 7 + input->tilt_x) / 8);
+  game->grav_y = static_cast<int16_t>((game->grav_y * 7 + input->tilt_y) / 8);
+  game->grav_z = static_cast<int16_t>((game->grav_z * 7 + input->tilt_z) / 8);
+  const int ax = iabs(rx);
+  const int ay = iabs(ry);
+  const int az = iabs(rz);
+  int mag = ax;
+  if (ay > mag) {
+    mag = ay;
+  }
+  if (az > mag) {
+    mag = az;
+  }
+  mag += (ax + ay + az - mag) / 2;
+  const bool hot = mag >= kShakeAt;
+  const bool edge = hot && !game->shake_hot;
+  game->shake_hot = hot;
+  return edge && game->scatter_cd == 0 && game->screen == Screen::Playing;
+}
+
+void scatter_shots(Game *game) {
+  bool any = false;
+  for (int i = 0; i < kMaxEnemyShots; ++i) {
+    Shot *shot = &game->enemy_shots[i];
+    if (!shot->alive) {
+      continue;
+    }
+    any = true;
+    int kick = 24 + rand_n(25);
+    if (rand_n(2) == 0) {
+      kick = -kick;
+    }
+    shot->vx = static_cast<int16_t>(shot->vx + kick);
+    shot->vy = static_cast<int16_t>(shot->vy + rand_n(17) - 8);
+  }
+  int picks[kMaxInvaders];
+  int count = 0;
+  for (int i = 0; i < kMaxInvaders; ++i) {
+    const InvState state = game->inv[i].state;
+    if (state == InvState::Formed || state == InvState::Diving || state == InvState::Returning) {
+      picks[count++] = i;
+    }
+  }
+  int want = (count + 2) / 3;
+  if (want > 3) {
+    want = 3;
+  }
+  for (int k = 0; k < want; ++k) {
+    const int j = k + rand_n(count - k);
+    const int tmp = picks[k];
+    picks[k] = picks[j];
+    picks[j] = tmp;
+    start_flee(game, &game->inv[picks[k]]);
+    any = true;
+  }
+  if (!any) {
+    return;
+  }
+  game->scatter_cd = kScatterCd;
+  kick_shake(game, 10, 2);
+  sound_play(Sfx::Scatter);
+  Serial.println("Shake scattered shots and sent saucers off the glass.");
+}
+
+void step_play(Game *game, const Input *input, bool shook) {
   if (input->click_edge) {
     game->screen = Screen::Paused;
     game->pause_i = 0;
@@ -1029,6 +1149,9 @@ void step_play(Game *game, const Input *input) {
     game->nav_hold = 0;
     sound_play(Sfx::Click);
     return;
+  }
+  if (shook) {
+    scatter_shots(game);
   }
   move_player(game, input);
   if (game->iframes > 0) {
@@ -1237,6 +1360,7 @@ void game_init(Game *game) {
 void game_step(Game *game, const Input *input) {
   game->frame++;
   update_feel(game, input);
+  const bool shook = sense_shake(game, input);
   if (game->screen != Screen::Paused) {
     move_stars(game);
     tick_juice(game);
@@ -1249,7 +1373,7 @@ void game_step(Game *game, const Input *input) {
       step_scores(game, input);
       break;
     case Screen::Playing:
-      step_play(game, input);
+      step_play(game, input, shook);
       break;
     case Screen::Paused:
       step_pause(game, input);

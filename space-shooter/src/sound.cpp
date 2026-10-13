@@ -180,6 +180,10 @@ void playSfx(Sfx sfx) {
       writeTone(330.0f, 80);
       writeTone(220.0f, 140);
       break;
+    case Sfx::Scatter:
+      writeTone(980.0f, 25);
+      writeNoise(50);
+      break;
     case Sfx::None:
       break;
   }
@@ -205,6 +209,7 @@ int rankOf(Sfx sfx) {
     case Sfx::Explode:
     case Sfx::Power:
     case Sfx::Boss:
+    case Sfx::Scatter:
       return 3;
     case Sfx::Hurt:
       return 4;
@@ -236,6 +241,8 @@ uint32_t durationMs(Sfx sfx) {
       return 180;
     case Sfx::Over:
       return 300;
+    case Sfx::Scatter:
+      return 75;
     case Sfx::None:
       return 0;
   }

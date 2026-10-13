@@ -15,6 +15,7 @@ enum class Sfx : uint8_t {
   Wave,
   Boss,
   Over,
+  Scatter,
 };
 
 bool sound_init();

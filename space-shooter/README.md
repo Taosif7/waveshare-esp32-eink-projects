@@ -101,6 +101,7 @@ The chip is optional. If it does not answer, the stars do not warp and the ship 
 |---------|--------|
 | Stick | Fly. On a menu, up and down move the cursor. Also banks the ship |
 | Board tilt | Leans the starfield. Banks the ship with the stick. Ignored if the ADXL345 is absent |
+| Hard shake | Knocks enemy shots off their lines, and some saucers flee off the glass and out of the wave. About 3 seconds before it will again. Ignored if the ADXL345 is absent |
 | Fire or **BOOT** | Shoot. On the C6, fire is the RXD button. On the C3, fire is GPIO3. Hold for about 6 shots a second, up to 3 bullets in flight. On a menu, select |
 | Stick click | Pause, or go back |
 
@@ -114,7 +115,7 @@ Easy is 4 lives and a slower wave. Normal is 3. Hard is 2, with faster steps, mo
 
 Between waves a `WAVE N` plaque wipes across the glass. A boss wave says `BOSS`. Bullets and explosion debris leave a dithered trail that thins out over three frames. A hit or a large explosion shakes the picture by one pixel for a few frames. Killing the boss inverts the glass for three frames.
 
-Tilt does not fly the ship. The stick does. With an ADXL345, roll shifts the near stars farther than the far ones and shears the field around the middle, and pitch leans it up or down. The ship sprite banks left, level, or right from that roll mixed with horizontal stick. With no accelerometer the stars stay put and the ship banks from the stick alone.
+Tilt does not fly the ship. The stick does. With an ADXL345, roll shifts the near stars farther than the far ones and shears the field around the middle, and pitch leans it up or down. The ship sprite banks left, level, or right from that roll mixed with horizontal stick. A hard shake of the board, about 2 g past the slow tilt, kicks every enemy shot sideways and sends about a third of the saucers off the glass. Those saucers do not come back and do not score. The glass jolts for a few frames. That will not happen again for about 3 seconds. A shake during a boss wave, or with nothing on the glass to scare, does nothing. With no accelerometer the stars stay put and the ship banks from the stick alone.
 
 ## Sound
 

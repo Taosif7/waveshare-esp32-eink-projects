@@ -96,7 +96,7 @@ uint8_t tilt_address() {
   return g_addr;
 }
 
-bool tilt_sample(int16_t *roll, int16_t *pitch) {
+bool tilt_sample(int16_t *roll, int16_t *pitch, int16_t *heave) {
   if (g_addr == 0) {
     return false;
   }
@@ -106,5 +106,6 @@ bool tilt_sample(int16_t *roll, int16_t *pitch) {
   }
   *roll = static_cast<int16_t>(raw[0] | (raw[1] << 8));
   *pitch = static_cast<int16_t>(raw[2] | (raw[3] << 8));
+  *heave = static_cast<int16_t>(raw[4] | (raw[5] << 8));
   return true;
 }
