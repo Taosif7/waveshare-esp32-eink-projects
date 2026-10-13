@@ -10,6 +10,7 @@ Projects for the [Waveshare ESP32-C6-ePaper-1.54](https://www.waveshare.com/esp3
 | [`modak-catcher`](modak-catcher/) | **Modak Catcher** — Ganesh Ji catches falling modaks; analog stick, partial refresh |
 | [`dino-game`](dino-game/) | **Dino** — Chrome T-Rex runner; one button, partial refresh, saved high score |
 | [`dino-oled`](dino-oled/) | **Dino OLED** — same runner on a 128×64 SH1106 I2C display |
+| [`space-shooter`](space-shooter/) | **Space Shooter** — portrait 64×128 shmup on the SH1106; joystick, fire button, saved scores |
 | [`stock-ticker`](stock-ticker/) | **Stock Ticker** — live Yahoo prices, selectable-range chart, 1 s poll over Wi-Fi |
 | [`oled-hello`](oled-hello/) | **OLED Hello** — animated HELLO WORLD on a 4-pin I2C OLED |
 | [`adxl-cube`](adxl-cube/) | **ADXL cube** — wireframe cube on the OLED that tilts with an ADXL345 |

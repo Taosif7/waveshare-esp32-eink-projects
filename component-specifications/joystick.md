@@ -61,6 +61,12 @@ SW, BOOT, and a short PWR press start a game or play again. A long PWR press ret
 
 Analog X is sampled on a background task **while the panel is busy**, so the catcher keeps tracking the stick through a partial refresh.
 
+### Space Shooter (`space-shooter`)
+
+Both axes fly the ship. Center is 2048, deadzone ±**600**, and the throw past the deadzone is scaled over **1400** counts. Low Y is up, the same mapping as Ink Duel. X is positive to the right.
+
+The stick click (SW, active-low on TXD) pauses a run and is Back on the title, the high-score list, pause, and game over. Fire is not the stick. It is a separate active-high button on RXD, with BOOT as a second fire input. See [button.md](button.md).
+
 ## Conflict with buttons
 
 GP3 is VRy here and the external button in the dino sketches and the stock ticker. GP4 is VRx here and the red button on the stock ticker. Do not combine those wirings.

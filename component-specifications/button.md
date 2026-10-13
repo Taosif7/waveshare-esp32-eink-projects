@@ -25,6 +25,7 @@ PWR is the soft power key when this board runs from the battery. The rail stays 
 | `stock-ticker` | Same as the red button (next) | Same as the green button (confirm) |
 | `adxl-cube`, `adxl-tunnel`, `adxl-horizon` | Hold ~1 s, then release: restart the app | Latches power on at boot. A later click, or a hold of about 800 ms, drops the latch and shows OFF |
 | `adxl-ridge` | Short: confirm Fly or Exit. Hold ~1 s, then release: restart | Same latch. Click, hold, or the menu item Exit drops the latch and shows OFF |
+| `space-shooter` | Fires, same as the RXD button | Latches the battery rail at boot. Not a game control |
 
 Poll onboard buttons from a background task. A full e-paper refresh blocks the main loop for about two seconds, and a click in that window is otherwise missed.
 
@@ -60,6 +61,8 @@ Do not move this signal to GP12 or GP13.
 
 `adxl-ridge` uses it two ways. In the menu, a click switches between Fly and Exit. In flight, a hold is the throttle, with the same half-second ease up and down. Leave the TF slot empty.
 
+`space-shooter` uses the same active-high module as fire, but on **RXD** (GPIO17), because GP3 is the joystick Y axis. `INPUT_PULLDOWN`, pressed is high. Hold to repeat. **BOOT** is wired in parallel with it and fires too. Debounce is 25 ms, sampled from a background task.
+
 ## Two external buttons (stock ticker)
 
 Same 3-pin modules, both active-high, both with pull-downs. Leave the TF slot empty. GP4 is also e-paper MISO, so the sketch times holds from the raw pin level. SPI traffic on that pin would otherwise look like a release and cancel a long press.
@@ -76,4 +79,4 @@ BOOT copies red. PWR copies green. Fun-mode hold time is `FUN_LONG_PRESS_MS` (60
 GP3 cannot be a button and the joystick Y axis at the same time. Projects pick one:
 
 - Button on GP3: `dino-game`, `dino-oled`, `stock-ticker` (green), `adxl-horizon` (warp), `adxl-ridge` (menu and throttle)
-- Joystick VRy on GP3: `rps-game`, `modak-catcher`
+- Joystick VRy on GP3: `rps-game`, `modak-catcher`, `space-shooter` (fire is the RXD button instead)
