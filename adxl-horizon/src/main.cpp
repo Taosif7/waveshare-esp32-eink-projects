@@ -678,18 +678,12 @@ static void drawHorizon(float pitch, float roll, float flight, float starTime, f
   const float ny = -dx;
 
   // Mild perspective so the bitmap stays a world map. A hard 1/v divide
-  // squeezed every continent into a stripe at the horizon.
+  // squeezed every continent into a stripe at the horizon. Water stays clear.
   display.setDrawColor(1);
   for (int y = 0; y < height; ++y) {
     int x0 = 0;
     int x1 = 0;
     groundSpan(y, cx, cy0, nx, ny, width, x0, x1);
-    if (x1 <= x0) {
-      continue;
-    }
-    display.setDrawColor(1);
-    display.drawHLine(x0, y, x1 - x0);
-    display.setDrawColor(0);
     for (int x = x0; x < x1; ++x) {
       const float u = (static_cast<float>(x) - cx) * dx + (static_cast<float>(y) - cy0) * dy;
       const float v = -((static_cast<float>(x) - cx) * nx + (static_cast<float>(y) - cy0) * ny);
@@ -705,7 +699,6 @@ static void drawHorizon(float pitch, float roll, float flight, float starTime, f
     }
   }
 
-  display.setDrawColor(1);
   constexpr float kFocal = 26.0f;
   constexpr float kStarNear = 1.15f;
   constexpr float kStarSpan = 7.4f;
