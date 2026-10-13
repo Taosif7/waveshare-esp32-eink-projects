@@ -8,7 +8,12 @@
 
 namespace {
 
+int g_ox = 0;
+int g_oy = 0;
+
 void plot(int x, int y) {
+  x += g_ox;
+  y += g_oy;
   if (x < 0 || y < 0 || x >= kScreenW || y >= kScreenH) {
     return;
   }
@@ -16,6 +21,8 @@ void plot(int x, int y) {
 }
 
 void fill(int x, int y, int w, int h) {
+  x += g_ox;
+  y += g_oy;
   if (w <= 0 || h <= 0 || x >= kScreenW || y >= kScreenH) {
     return;
   }
@@ -118,12 +125,25 @@ void format_u(char *dst, unsigned value, int digits) {
   dst[digits] = '\0';
 }
 
-void draw_star(const Star *star, uint16_t frame) {
-  if (star->kind > 0 && ((frame + star->twinkle) % 11) == 0) {
+void draw_star(const Star *star, const Game *game) {
+  if (star->kind > 0 && ((game->frame + star->twinkle) % 11) == 0) {
     return;
   }
-  const int x = star->x;
-  const int y = star->y;
+  const int layer = static_cast<int>(star->kind) + 1;
+  const int sy = static_cast<int>(star->y);
+  const int dx = static_cast<int>(game->lean_x) * layer / 120 +
+                 static_cast<int>(game->lean_x) * (sy - kScreenH / 2) * layer / 8192;
+  const int dy = static_cast<int>(game->lean_y) * layer / 160;
+  int x = static_cast<int>(star->x) + dx;
+  int y = sy + dy;
+  x %= kScreenW;
+  if (x < 0) {
+    x += kScreenW;
+  }
+  y %= kScreenH;
+  if (y < 0) {
+    y += kScreenH;
+  }
   plot(x, y);
   if (star->kind == 0) {
     return;
@@ -132,7 +152,7 @@ void draw_star(const Star *star, uint16_t frame) {
   plot(x + 1, y);
   plot(x, y - 1);
   plot(x, y + 1);
-  if (star->kind == 2 && ((frame + star->twinkle) % 5) != 0) {
+  if (star->kind == 2 && ((game->frame + star->twinkle) % 5) != 0) {
     plot(x - 1, y - 1);
     plot(x + 1, y - 1);
     plot(x - 1, y + 1);
@@ -142,7 +162,23 @@ void draw_star(const Star *star, uint16_t frame) {
 
 void draw_stars(const Game *game) {
   for (int i = 0; i < kMaxStars; ++i) {
-    draw_star(&game->stars[i], game->frame);
+    draw_star(&game->stars[i], game);
+  }
+}
+
+void draw_ghosts(const Game *game) {
+  for (int i = 0; i < kMaxGhosts; ++i) {
+    const Ghost *ghost = &game->ghosts[i];
+    if (ghost->life == 0) {
+      continue;
+    }
+    const int x = ghost->x;
+    const int y = ghost->y;
+    const bool on = ghost->life >= 3 || (ghost->life == 2 && ((x + y) & 1) == 0) ||
+                    (ghost->life == 1 && ((x + y) & 3) == 0);
+    if (on) {
+      plot(x, y);
+    }
   }
 }
 
@@ -188,7 +224,15 @@ void draw_ship(const Game *game) {
   }
   const int x = game->px >> 4;
   const int y = game->py >> 4;
-  const uint8_t *bmp = ((game->frame / 4) & 1) == 0 ? kShip : kShipB;
+  const bool thrust = ((game->frame / 4) & 1) == 0;
+  const uint8_t *bmp = kShip;
+  if (game->bank < 0) {
+    bmp = thrust ? kShipL : kShipLB;
+  } else if (game->bank > 0) {
+    bmp = thrust ? kShipR : kShipRB;
+  } else {
+    bmp = thrust ? kShip : kShipB;
+  }
   blit(x, y, kShipW, kShipH, bmp);
   if (!game->shield) {
     return;
@@ -271,6 +315,7 @@ void draw_play(const Game *game) {
       }
     }
   }
+  draw_ghosts(game);
   for (int i = 0; i < kMaxPlayerShots; ++i) {
     if (game->player_shots[i].alive) {
       fill(game->player_shots[i].x >> 4, game->player_shots[i].y >> 4, 1, 4);
@@ -288,15 +333,27 @@ void draw_play(const Game *game) {
     if (game->wave % 5 == 0) {
       snprintf(line, sizeof(line), "BOSS");
     } else {
-      snprintf(line, sizeof(line), "WAVE %02u", static_cast<unsigned>(game->wave));
+      snprintf(line, sizeof(line), "WAVE %u", static_cast<unsigned>(game->wave));
     }
     const int width = text_width(line, 1);
-    const int x = (kScreenW - width) / 2;
-    const int y = 56;
+    const int box_w = width + 6;
+    const int box_h = kFontH + 4;
+    const int travel = kScreenW + box_w;
+    const int t = kWaveWipe - game->wave_banner;
+    const int x = -box_w + (kWaveWipe <= 1 ? 0 : t * travel / (kWaveWipe - 1));
+    const int y = kWaveBannerY;
     oled.setDrawColor(0);
-    fill(x - 2, y - 1, width + 4, kFontH + 2);
+    fill(x, y, box_w, box_h);
     oled.setDrawColor(1);
-    draw_text(x, y, line, 1);
+    for (int i = 0; i < box_w; ++i) {
+      plot(x + i, y);
+      plot(x + i, y + box_h - 1);
+    }
+    for (int i = 0; i < box_h; ++i) {
+      plot(x, y + i);
+      plot(x + box_w - 1, y + i);
+    }
+    draw_text(x + 3, y + 2, line, 1);
   }
   draw_hud(game);
 }
@@ -340,7 +397,7 @@ void draw_pause(const Game *game) {
   oled.setDrawColor(0);
   fill(kPauseBoxX, kPauseBoxY, kPauseBoxW, kPauseBoxH);
   oled.setDrawColor(1);
-  oled.drawFrame(static_cast<u8g2_uint_t>(kPauseBoxX), static_cast<u8g2_uint_t>(kPauseBoxY),
+  oled.drawFrame(static_cast<u8g2_uint_t>(kPauseBoxX + g_ox), static_cast<u8g2_uint_t>(kPauseBoxY + g_oy),
                  static_cast<u8g2_uint_t>(kPauseBoxW), static_cast<u8g2_uint_t>(kPauseBoxH));
   draw_centered(kPauseTitleY, "PAUSED", 1);
   const char *items[3] = {"RESUME", "RESTART", "QUIT"};
@@ -377,6 +434,8 @@ void draw_over(const Game *game) {
 }  // namespace
 
 void ui_draw(const Game *game) {
+  g_ox = game->shake_x;
+  g_oy = game->shake_y;
   oled.clearBuffer();
   oled.setDrawColor(1);
   switch (game->screen) {
@@ -396,6 +455,11 @@ void ui_draw(const Game *game) {
     case Screen::GameOver:
       draw_over(game);
       break;
+  }
+  if (game->flash > 0) {
+    oled.setDrawColor(2);
+    oled.drawBox(0, 0, static_cast<u8g2_uint_t>(kScreenW), static_cast<u8g2_uint_t>(kScreenH));
+    oled.setDrawColor(1);
   }
   oled.sendBuffer();
 }

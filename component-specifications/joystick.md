@@ -63,7 +63,7 @@ Analog X is sampled on a background task **while the panel is busy**, so the cat
 
 ### Space Shooter (`space-shooter`)
 
-Both axes fly the ship. Center is 2048, deadzone ±**600**, and the throw past the deadzone is scaled over **1400** counts. Low Y is up, the same mapping as Ink Duel. X is positive to the right.
+Both axes fly the ship. Center is 2048, deadzone ±**600**, and the throw past the deadzone is scaled over **1400** counts. Low Y is up, the same mapping as Ink Duel. X is positive to the right. Board tilt does not move the ship; that is the ADXL345, and it only leans the stars and banks the sprite. See [adxl345.md](adxl345.md).
 
 The stick click (SW, active-low on TXD) pauses a run and is Back on the title, the high-score list, pause, and game over. Fire is not the stick. It is a separate active-high button on RXD, with BOOT as a second fire input. See [button.md](button.md).
 

@@ -43,12 +43,16 @@ constexpr int kPauseItemY0 = 58;
 constexpr int kPauseItemDy = 10;
 constexpr int kPauseTextX = 14;
 
+constexpr int kWaveWipe = 32;
+constexpr int kWaveBannerY = 52;
+
 constexpr int kMaxInvaders = 16;
 constexpr int kMaxPlayerShots = 3;
 constexpr int kMaxEnemyShots = 6;
 constexpr int kMaxRocks = 3;
 constexpr int kMaxBits = 24;
 constexpr int kMaxStars = 16;
+constexpr int kMaxGhosts = 144;
 
 enum class Screen : uint8_t { Menu, Scores, Playing, Paused, GameOver };
 enum class Difficulty : uint8_t { Easy, Normal, Hard };
@@ -97,12 +101,21 @@ struct Star {
   uint8_t twinkle;
 };
 
+struct Ghost {
+  uint8_t x;
+  uint8_t y;
+  uint8_t life;
+};
+
 struct Input {
   int16_t axis_x;
   int16_t axis_y;
   bool fire_held;
   bool fire_edge;
   bool click_edge;
+  int16_t tilt_x;
+  int16_t tilt_y;
+  bool tilt_ok;
 };
 
 struct Game {
@@ -144,6 +157,16 @@ struct Game {
   uint8_t boss_hp;
   uint8_t boss_max;
   uint8_t boss_cd;
+  int16_t lean_x;
+  int16_t lean_y;
+  int8_t bank;
+  bool tilt_seen;
+  uint8_t tilt_miss;
+  uint8_t shake;
+  int8_t shake_x;
+  int8_t shake_y;
+  uint8_t flash;
+  uint8_t ghost_i;
   bool power_on;
   uint8_t power_kind;
   int16_t power_x;
@@ -154,6 +177,7 @@ struct Game {
   Rock rocks[kMaxRocks];
   Bit bits[kMaxBits];
   Star stars[kMaxStars];
+  Ghost ghosts[kMaxGhosts];
 };
 
 void game_init(Game *game);

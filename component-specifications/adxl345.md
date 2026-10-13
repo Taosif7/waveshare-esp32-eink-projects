@@ -63,6 +63,10 @@ The external button on GP3 is a warp hold for this sketch. It is not part of the
 
 Same level pose as the horizon. Bank turns the heading, so a ridge you passed is still there when you come back. Nose up climbs high enough to clear the tall crests; nose down drops toward the valley. The picture is a wireframe grid of a seeded height field. Flying into a crest glitches the OLED until the plane climbs or turns clear. GP3 holds the throttle in flight and clicks between Fly and Exit in the menu. Exit drops the power latch.
 
+### Shooter (`space-shooter`)
+
+The joystick still flies the ship. Roll shifts and shears the starfield: near stars move farther than far ones. Pitch leans the field up and down. The ship sprite banks left, level, or right from that roll, mixed with horizontal stick. If the ADXL345 does not answer, the stars do not warp and the ship banks from the stick alone. Signs are `kRollSign` and `kPitchSign` at the top of `space-shooter/src/main.cpp`. Flat on the table is level (no warp). Right-wing-down is positive roll before the sign flip.
+
 ## If it does not show up
 
 The serial log prints an I2C scan, then either `ADXL345 at 0x53` (or `0x1D`) or the wiring reminder: CS to 3V3, SDO to GND for `0x53`, SDA to SDA, SCL to SCL, VCC to 3V3.

@@ -109,6 +109,95 @@ void move_stars(Game *game) {
   }
 }
 
+int clamp_i(int v, int lo, int hi) {
+  if (v < lo) {
+    return lo;
+  }
+  if (v > hi) {
+    return hi;
+  }
+  return v;
+}
+
+void stamp_ghost(Game *game, int x, int y) {
+  if (x < 0 || y < 0 || x >= kScreenW || y >= kScreenH) {
+    return;
+  }
+  Ghost *ghost = &game->ghosts[game->ghost_i];
+  ghost->x = static_cast<uint8_t>(x);
+  ghost->y = static_cast<uint8_t>(y);
+  ghost->life = 3;
+  game->ghost_i = static_cast<uint8_t>((game->ghost_i + 1) % kMaxGhosts);
+}
+
+void age_ghosts(Game *game) {
+  for (int i = 0; i < kMaxGhosts; ++i) {
+    if (game->ghosts[i].life > 0) {
+      game->ghosts[i].life--;
+    }
+  }
+}
+
+void kick_shake(Game *game, int frames) {
+  if (frames <= game->shake) {
+    return;
+  }
+  game->shake = static_cast<uint8_t>(frames);
+  game->shake_x = 1;
+  game->shake_y = 0;
+}
+
+void tick_juice(Game *game) {
+  age_ghosts(game);
+  if (game->flash > 0) {
+    game->flash--;
+  }
+  if (game->shake == 0) {
+    return;
+  }
+  const int phase = game->shake & 3;
+  game->shake_x = (phase & 1) != 0 ? 1 : -1;
+  game->shake_y = (phase & 2) != 0 ? 1 : -1;
+  game->shake--;
+  if (game->shake == 0) {
+    game->shake_x = 0;
+    game->shake_y = 0;
+  }
+}
+
+void update_feel(Game *game, const Input *input) {
+  if (input->tilt_ok) {
+    const int tx = clamp_i(input->tilt_x, -400, 400);
+    const int ty = clamp_i(input->tilt_y, -400, 400);
+    game->tilt_seen = true;
+    game->tilt_miss = 0;
+    game->lean_x = static_cast<int16_t>((game->lean_x * 3 + tx) / 4);
+    game->lean_y = static_cast<int16_t>((game->lean_y * 3 + ty) / 4);
+  } else if (game->tilt_seen) {
+    if (game->tilt_miss < 250) {
+      game->tilt_miss++;
+    }
+    if (game->tilt_miss > 8) {
+      game->lean_x = static_cast<int16_t>(game->lean_x * 3 / 4);
+      game->lean_y = static_cast<int16_t>(game->lean_y * 3 / 4);
+    }
+  }
+  const int src = input->tilt_ok ? (input->tilt_x / 2 + input->axis_x / 16) : (input->axis_x / 8);
+  if (game->bank < 0) {
+    if (src > -28) {
+      game->bank = src > 60 ? 1 : 0;
+    }
+  } else if (game->bank > 0) {
+    if (src < 28) {
+      game->bank = src < -60 ? -1 : 0;
+    }
+  } else if (src < -60) {
+    game->bank = -1;
+  } else if (src > 60) {
+    game->bank = 1;
+  }
+}
+
 void clear_enemy_shots(Game *game) {
   for (int i = 0; i < kMaxEnemyShots; ++i) {
     game->enemy_shots[i].alive = false;
@@ -126,6 +215,10 @@ void clear_combat(Game *game) {
   for (int i = 0; i < kMaxBits; ++i) {
     game->bits[i].alive = false;
   }
+  for (int i = 0; i < kMaxGhosts; ++i) {
+    game->ghosts[i].life = 0;
+  }
+  game->ghost_i = 0;
   for (int i = 0; i < kMaxInvaders; ++i) {
     game->inv[i].state = InvState::Empty;
   }
@@ -204,6 +297,9 @@ void burst_at(Game *game, int px, int py, int count, int life) {
     bit->vy = static_cast<int16_t>(kDir[dir][1] * speed);
     bit->life = static_cast<uint8_t>(life);
   }
+  if (count >= 10) {
+    kick_shake(game, 6);
+  }
 }
 
 void inv_pixel(const Game *game, const Invader *inv, int *x, int *y) {
@@ -275,7 +371,7 @@ void setup_boss(Game *game) {
 }
 
 void setup_wave(Game *game) {
-  game->wave_banner = 40;
+  game->wave_banner = kWaveWipe;
   game->clear_wait = 0;
   game->wave_awarded = false;
   game->enemy_cd = 24;
@@ -345,6 +441,7 @@ void hurt(Game *game) {
   if (game->iframes > 0) {
     return;
   }
+  kick_shake(game, 6);
   if (game->shield) {
     game->shield = false;
     game->iframes = 20;
@@ -424,13 +521,20 @@ void move_player(Game *game, const Input *input) {
   }
 }
 
-void move_shots(Shot *shots, int count) {
+void move_shots(Game *game, Shot *shots, int count, int stamps) {
   for (int i = 0; i < count; ++i) {
     if (!shots[i].alive) {
       continue;
     }
+    const int x0 = shots[i].x >> 4;
+    const int y0 = shots[i].y >> 4;
     shots[i].x = static_cast<int16_t>(shots[i].x + shots[i].vx);
     shots[i].y = static_cast<int16_t>(shots[i].y + shots[i].vy);
+    const int x1 = shots[i].x >> 4;
+    const int y1 = shots[i].y >> 4;
+    for (int s = 0; s < stamps; ++s) {
+      stamp_ghost(game, x0 + (x1 - x0) * s / stamps, y0 + (y1 - y0) * s / stamps);
+    }
     const int x = shots[i].x >> 4;
     const int y = shots[i].y >> 4;
     if (y < -6 || y > kScreenH || x < -8 || x > kScreenW) {
@@ -445,6 +549,7 @@ void move_bits(Game *game) {
     if (!bit->alive) {
       continue;
     }
+    stamp_ghost(game, bit->x >> 4, bit->y >> 4);
     bit->x = static_cast<int16_t>(bit->x + bit->vx);
     bit->y = static_cast<int16_t>(bit->y + bit->vy);
     if (bit->life > 0) {
@@ -808,6 +913,8 @@ void collide(Game *game) {
         if (game->boss_hp == 0) {
           game->boss_on = false;
           add_score(game, 250 + game->wave * 10);
+          game->flash = 3;
+          kick_shake(game, 8);
           burst_at(game, x + kBossW / 2, y + kBossH / 2, 16, 18);
           sound_play(Sfx::Explode);
         }
@@ -936,8 +1043,8 @@ void step_play(Game *game, const Input *input) {
     try_shoot(game);
     game->fire_cd = 5;
   }
-  move_shots(game->player_shots, kMaxPlayerShots);
-  move_shots(game->enemy_shots, kMaxEnemyShots);
+  move_shots(game, game->player_shots, kMaxPlayerShots, 3);
+  move_shots(game, game->enemy_shots, kMaxEnemyShots, 2);
   move_bits(game);
   move_power(game);
   move_rocks(game);
@@ -1129,8 +1236,10 @@ void game_init(Game *game) {
 
 void game_step(Game *game, const Input *input) {
   game->frame++;
+  update_feel(game, input);
   if (game->screen != Screen::Paused) {
     move_stars(game);
+    tick_juice(game);
   }
   switch (game->screen) {
     case Screen::Menu:

@@ -8,7 +8,13 @@
 #include "game.h"
 #include "oled.h"
 #include "sound.h"
+#include "tilt.h"
 #include "ui.h"
+
+// Flip a sign if that axis leans the wrong way. Roll is wing-down,
+// pitch is nose-down. Positive roll banks the ship and shifts stars right.
+static constexpr int kRollSign = 1;
+static constexpr int kPitchSign = 1;
 
 namespace {
 
@@ -166,6 +172,13 @@ Input read_input() {
   input.click_edge = clicks != seen_click;
   seen_fire = fires;
   seen_click = clicks;
+  int16_t roll = 0;
+  int16_t pitch = 0;
+  if (tilt_present() && tilt_sample(&roll, &pitch)) {
+    input.tilt_ok = true;
+    input.tilt_x = static_cast<int16_t>(roll * kRollSign);
+    input.tilt_y = static_cast<int16_t>(pitch * kPitchSign);
+  }
   return input;
 }
 
@@ -185,6 +198,13 @@ void setup() {
   sound_init();
   eink_begin();
   Wire.setClock(400000);
+
+  if (tilt_begin()) {
+    Serial.printf("ADXL345 at 0x%02X. Tilt leans the stars.\n", tilt_address());
+  } else {
+    Serial.println("ADXL345 not found. CS -> 3V3, SDO -> GND, SDA -> SDA, SCL -> SCL, VCC -> 3V3.");
+    Serial.println("Stars will not warp. The ship still banks from the stick.");
+  }
 
   configure_controls();
   xTaskCreatePinnedToCore(input_task, "input", 3072, nullptr, 4, nullptr, 0);

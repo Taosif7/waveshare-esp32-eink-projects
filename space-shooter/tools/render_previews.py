@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write src/sprites.h from the pixel art, then render 4x menu/play/game-over PNGs.
+"""Write src/sprites.h from the pixel art, then render 4x menu/play/game-over/juice PNGs.
 
 The PNGs are composited from the bytes just written to sprites.h and from the
 layout constexprs in src/game.h, using the same draw order as src/ui.cpp.
@@ -206,6 +206,10 @@ NAMES = {
     "saucer_b": ("kSaucerW", "kSaucerH", "kSaucerB"),
     "ship": ("kShipW", "kShipH", "kShip"),
     "ship_b": ("kShipW", "kShipH", "kShipB"),
+    "ship_l": ("kShipW", "kShipH", "kShipL"),
+    "ship_lb": ("kShipW", "kShipH", "kShipLB"),
+    "ship_r": ("kShipW", "kShipH", "kShipR"),
+    "ship_rb": ("kShipW", "kShipH", "kShipRB"),
     "boss": ("kBossW", "kBossH", "kBoss"),
     "boss_b": ("kBossW", "kBossH", "kBossB"),
     "rock": ("kRockW", "kRockH", "kRock"),
@@ -214,6 +218,39 @@ NAMES = {
     "spread": ("kPowerW", "kPowerH", "kSpread"),
     "shield": ("kPowerW", "kPowerH", "kShieldIcon"),
 }
+
+
+def shear_ship(art, direction):
+    """Nose leans into the turn. Lower rows stay put so the wings are not clipped."""
+    rows = [line for line in art.strip("\n").split("\n")]
+    width = len(rows[0])
+    out = []
+    for i, row in enumerate(rows):
+        if i < 5:
+            shift = 2 * direction
+        elif i < 10:
+            shift = direction
+        else:
+            shift = 0
+        buf = ["."] * width
+        for x, ch in enumerate(row):
+            nx = x + shift
+            if ch == "#" and 0 <= nx < width:
+                buf[nx] = "#"
+        out.append("".join(buf))
+    return "\n".join(out) + "\n"
+
+
+def sprite_sheet():
+    sheet = {}
+    for key, art in SPRITES.items():
+        sheet[key] = art
+        if key == "ship_b":
+            sheet["ship_l"] = shear_ship(SPRITES["ship"], -1)
+            sheet["ship_lb"] = shear_ship(SPRITES["ship_b"], -1)
+            sheet["ship_r"] = shear_ship(SPRITES["ship"], 1)
+            sheet["ship_rb"] = shear_ship(SPRITES["ship_b"], 1)
+    return sheet
 
 
 def rows_of(art):
@@ -270,7 +307,7 @@ def write_header():
     ]
     seen_dims = set()
     blobs = {}
-    for key, art in SPRITES.items():
+    for key, art in sprite_sheet().items():
         width, height, blob = to_xbm(art)
         dim_w, dim_h, c_name = NAMES[key]
         blobs[c_name] = (width, height, blob)
@@ -532,9 +569,54 @@ def render(const, arrays):
     over.centered(const["kOverTitleY"], "GAME OVER", 1)
     over.chevrons(const["kOverChevron2Y"], "<")
     over.save(ASSETS / "gameover.png")
+
+    juice = Screen(const, arrays)
+    frame = 8
+    leaned = []
+    for x, y, kind, twinkle in PLAY_STARS:
+        leaned.append(((x + (kind + 1) * 2) % const["kScreenW"], min(const["kScreenH"] - 1, y + kind), kind, twinkle))
+    juice.stars(frame, leaned)
+    # Dithered phosphor behind a bullet and an explosion. life 3 is solid,
+    # life 2 keeps even x+y, life 1 keeps x+y divisible by 4.
+    def ghost(screen, x, y, life):
+        if life >= 3 or (life == 2 and (x + y) % 2 == 0) or (life == 1 and (x + y) % 4 == 0):
+            screen.plot(x, y)
+
+    for y, life in ((78, 3), (81, 3), (84, 2), (87, 2), (90, 1), (93, 1)):
+        ghost(juice, 30, y, life)
+    juice.fill(30, 70, 1, 4)
+    for y, life in ((96, 3), (99, 2), (102, 1)):
+        ghost(juice, 18, y, life)
+        ghost(juice, 19, y, life)
+    juice.fill(18, 88, 2, 3)
+    cx, cy = 44, 36
+    for dx, dy, life in ((0, 0, 3), (2, -1, 3), (-2, 1, 2), (3, 2, 2), (-3, -2, 1), (1, 3, 1), (-1, -3, 2), (4, 0, 1)):
+        ghost(juice, cx + dx, cy + dy, life)
+        if life >= 3:
+            juice.plot(cx + dx + 1, cy + dy)
+    juice.saucer(4, 16, frame)
+    line = "WAVE 3"
+    width = juice.text_width(line, 1)
+    box_w = width + 6
+    box_h = const["kFontH"] + 4
+    bx, by = 8, const["kWaveBannerY"]
+    juice.fill(bx, by, box_w, box_h, False)
+    for i in range(box_w):
+        juice.plot(bx + i, by)
+        juice.plot(bx + i, by + box_h - 1)
+    for i in range(box_h):
+        juice.plot(bx, by + i)
+        juice.plot(bx + box_w - 1, by + i)
+    juice.text(bx + 3, by + 2, line, 1)
+    ship_y = const["kScreenH"] - const["kShipH"] - 2
+    juice.blit(26, ship_y, const["kShipW"], const["kShipH"], arrays["kShipR"])
+    juice.hud(120, 3, 3)
+    juice.save(ASSETS / "juice.png")
+
     print(f"wrote {ASSETS / 'menu.png'}")
     print(f"wrote {ASSETS / 'gameplay.png'}")
     print(f"wrote {ASSETS / 'gameover.png'}")
+    print(f"wrote {ASSETS / 'juice.png'}")
 
 
 def main():
@@ -544,7 +626,7 @@ def main():
     const = parse_constexpr(text)
     const.update(parse_constexpr(GAME_H.read_text()))
     # Round-trip: header bytes must match the art the firmware will compile.
-    for key, art in SPRITES.items():
+    for key, art in sprite_sheet().items():
         _, _, blob = to_xbm(art)
         c_name = NAMES[key][2]
         if arrays[c_name] != blob:
