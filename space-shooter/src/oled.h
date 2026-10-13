@@ -2,8 +2,7 @@
 
 #include <U8g2lib.h>
 
-constexpr int kOledSda = 18;
-constexpr int kOledScl = 8;
+#include "board_pins.h"
 
 // U8G2_R1 turns the 128x64 glass into a 64x128 portrait. U8G2_R3 if the
 // module is mounted the other way up — change it in oled.cpp.

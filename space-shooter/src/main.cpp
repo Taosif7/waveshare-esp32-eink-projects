@@ -4,6 +4,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
+#include "board_pins.h"
 #include "eink_warn.h"
 #include "game.h"
 #include "oled.h"
@@ -18,15 +19,11 @@ static constexpr int kPitchSign = 1;
 
 namespace {
 
-constexpr int kSdaPin = 18;
-constexpr int kSclPin = 8;
-constexpr int kBootPin = 9;
-constexpr int kPwrPin = 2;
-constexpr int kFirePin = 17;
 constexpr int kJoyCenter = 2048;
 constexpr int kJoyDead = 600;
 constexpr int kJoySpan = 1400;
 
+#if BOARD_HAS_RAILS
 constexpr uint8_t kTca9554Address = 0x20;
 constexpr uint8_t kTcaOutputReg = 0x01;
 constexpr uint8_t kTcaConfigReg = 0x03;
@@ -35,6 +32,7 @@ constexpr uint8_t kEpdPowerBit = 1 << 0;
 constexpr uint8_t kAudioPowerBit = 1 << 1;
 constexpr uint8_t kAmpBit = 1 << 3;
 constexpr uint8_t kRailMask = kBatteryHoldBit | kEpdPowerBit | kAudioPowerBit | kAmpBit;
+#endif
 
 struct Controls {
   volatile int joy_x;
@@ -49,6 +47,7 @@ Game game;
 uint32_t seen_fire = 0;
 uint32_t seen_click = 0;
 
+#if BOARD_HAS_RAILS
 bool writeDevReg(uint8_t addr, uint8_t reg, uint8_t value) {
   Wire.beginTransmission(addr);
   Wire.write(reg);
@@ -84,6 +83,15 @@ void holdBatteryPower() {
   }
   Serial.println("TCA9554 0x20 did not latch. Battery drops when PWR is released.");
 }
+#endif
+
+bool fire_down() {
+  bool down = digitalRead(kFirePin) == HIGH;
+#if BOARD_HAS_BOOT_FIRE
+  down = down || digitalRead(kBootPin) == LOW;
+#endif
+  return down;
+}
 
 int shape_axis(int raw) {
   int delta = raw - kJoyCenter;
@@ -104,35 +112,39 @@ int shape_axis(int raw) {
 }
 
 void configure_controls() {
+#if BOARD_HAS_BOOT_FIRE
   gpio_reset_pin(static_cast<gpio_num_t>(kBootPin));
-  gpio_reset_pin(static_cast<gpio_num_t>(kPwrPin));
-  gpio_reset_pin(static_cast<gpio_num_t>(kFirePin));
-  gpio_reset_pin(GPIO_NUM_4);
-  gpio_reset_pin(GPIO_NUM_3);
-  gpio_reset_pin(GPIO_NUM_16);
   pinMode(kBootPin, INPUT_PULLUP);
+#endif
+#if BOARD_HAS_PWR
+  gpio_reset_pin(static_cast<gpio_num_t>(kPwrPin));
   pinMode(kPwrPin, INPUT_PULLUP);
+#endif
+  gpio_reset_pin(static_cast<gpio_num_t>(kFirePin));
+  gpio_reset_pin(static_cast<gpio_num_t>(kJoyXPin));
+  gpio_reset_pin(static_cast<gpio_num_t>(kJoyYPin));
+  gpio_reset_pin(static_cast<gpio_num_t>(kJoySwPin));
   pinMode(kFirePin, INPUT_PULLDOWN);
-  pinMode(4, INPUT);
-  pinMode(3, INPUT);
-  pinMode(16, INPUT_PULLUP);
+  pinMode(kJoyXPin, INPUT);
+  pinMode(kJoyYPin, INPUT);
+  pinMode(kJoySwPin, INPUT_PULLUP);
   analogReadResolution(12);
 }
 
 void input_task(void *) {
-  bool fire_raw_last = digitalRead(kFirePin) == HIGH || digitalRead(kBootPin) == LOW;
+  bool fire_raw_last = fire_down();
   bool fire_stable = fire_raw_last;
   uint32_t fire_change = millis();
   controls.fire_held = fire_stable;
-  int click_raw_last = digitalRead(16);
+  int click_raw_last = digitalRead(kJoySwPin);
   int click_stable = click_raw_last;
   uint32_t click_change = millis();
 
   while (true) {
-    controls.joy_x = analogRead(4);
-    controls.joy_y = analogRead(3);
+    controls.joy_x = analogRead(kJoyXPin);
+    controls.joy_y = analogRead(kJoyYPin);
 
-    const bool fire_raw = digitalRead(kFirePin) == HIGH || digitalRead(kBootPin) == LOW;
+    const bool fire_raw = fire_down();
     const uint32_t now = millis();
     if (fire_raw != fire_raw_last) {
       fire_raw_last = fire_raw;
@@ -146,7 +158,7 @@ void input_task(void *) {
       }
     }
 
-    const int click_raw = digitalRead(16);
+    const int click_raw = digitalRead(kJoySwPin);
     if (click_raw != click_raw_last) {
       click_raw_last = click_raw;
       click_change = now;
@@ -189,20 +201,29 @@ void setup() {
   delay(300);
   Serial.println("Space shooter boot");
 
+#if BOARD_HAS_BOOT_FIRE
   pinMode(kBootPin, INPUT_PULLUP);
+#endif
+#if BOARD_HAS_PWR
   pinMode(kPwrPin, INPUT_PULLUP);
+#endif
 
-  Wire.begin(kSdaPin, kSclPin);
+  Wire.begin(kOledSda, kOledScl);
   Wire.setClock(100000);
+#if BOARD_HAS_RAILS
   holdBatteryPower();
+#endif
   sound_init();
+#if BOARD_HAS_EINK
   eink_begin();
+#endif
   Wire.setClock(400000);
 
   if (tilt_begin()) {
     Serial.printf("ADXL345 at 0x%02X. Tilt leans the stars.\n", tilt_address());
   } else {
-    Serial.println("ADXL345 not found. CS -> 3V3, SDO -> GND, SDA -> SDA, SCL -> SCL, VCC -> 3V3.");
+    Serial.printf("ADXL345 not found. SDA GPIO%d, SCL GPIO%d, CS -> 3V3, SDO -> GND, VCC -> 3V3.\n",
+                  kOledSda, kOledScl);
     Serial.println("Stars will not warp. The ship still banks from the stick.");
   }
 
@@ -211,13 +232,18 @@ void setup() {
 
   while (!oled_begin()) {
     oled_scan_i2c();
-    Serial.println("No OLED at 0x3C or 0x3D. VCC -> 3V3, GND -> GND, SDA -> SDA, SCL -> SCL.");
+    Serial.printf("No OLED at 0x3C or 0x3D. VCC -> 3V3, GND -> GND, SDA GPIO%d, SCL GPIO%d.\n",
+                  kOledSda, kOledScl);
     delay(1000);
   }
 
   game_init(&game);
   ui_draw(&game);
-  Serial.println("Portrait 64x128. Stick moves, RXD/BOOT fires, TXD click pauses.");
+#if BOARD_HAS_BOOT_FIRE
+  Serial.println("Portrait 64x128. Stick moves, fire button or BOOT shoots, stick click pauses.");
+#else
+  Serial.println("Portrait 64x128. Stick moves, fire button shoots, stick click pauses.");
+#endif
 }
 
 void loop() {

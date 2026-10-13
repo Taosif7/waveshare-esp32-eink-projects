@@ -10,7 +10,7 @@ Projects for the [Waveshare ESP32-C6-ePaper-1.54](https://www.waveshare.com/esp3
 | [`modak-catcher`](modak-catcher/) | **Modak Catcher** — Ganesh Ji catches falling modaks; analog stick, partial refresh |
 | [`dino-game`](dino-game/) | **Dino** — Chrome T-Rex runner; one button, partial refresh, saved high score |
 | [`dino-oled`](dino-oled/) | **Dino OLED** — same runner on a 128×64 SH1106 I2C display |
-| [`space-shooter`](space-shooter/) | **Space Shooter** — portrait 64×128 shmup on the SH1106; joystick, fire button, saved scores |
+| [`space-shooter`](space-shooter/) | **Space Shooter** — portrait 64×128 shmup on the SH1106; joystick, fire button, saved scores. Also builds for the ESP32-C3 Super Mini |
 | [`stock-ticker`](stock-ticker/) | **Stock Ticker** — live Yahoo prices, selectable-range chart, 1 s poll over Wi-Fi |
 | [`oled-hello`](oled-hello/) | **OLED Hello** — animated HELLO WORLD on a 4-pin I2C OLED |
 | [`adxl-cube`](adxl-cube/) | **ADXL cube** — wireframe cube on the OLED that tilts with an ADXL345 |
@@ -25,6 +25,6 @@ Waveshare **ESP32-C6-ePaper-1.54** (200×200 B/W e-paper). See each project's `R
 
 ## Board reference
 
-Component wiring and lab notes live in [`component-specifications/`](component-specifications/), one file per part (this board, the 1.54″ e-paper, SH1106, button, joystick, ADXL345).
+Component wiring and lab notes live in [`component-specifications/`](component-specifications/), one file per part (this board, the ESP32-C3-MINI-1, the 1.54″ e-paper, SH1106, button, joystick, ADXL345).
 
 See also [ESP32-C6-ePaper-1.54-Technical-Specification.md](ESP32-C6-ePaper-1.54-Technical-Specification.md) for USB caveats, toolchain, and bring-up.

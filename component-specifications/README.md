@@ -27,7 +27,7 @@ Lab notes for the hardware this repo actually drives. Pin numbers, addresses, an
 | `adxl-tunnel` | warning notice | UI | BOOT (restart), PWR (power latch) | | tilt |
 | `adxl-horizon` | warning notice | UI | BOOT, PWR, external on GP3 (warp) | | attitude |
 | `adxl-ridge` | warning notice | UI | BOOT (menu), PWR (off), external on GP3 (menu / throttle) | | flight |
-| `space-shooter` | warning notice | UI, portrait 64×128 | BOOT (fire), fire button on RXD | Move, click pauses | Star lean and ship bank |
+| `space-shooter` | C6: warning notice. C3: none | UI, portrait 64×128 | C6: BOOT and RXD. C3: GPIO3, BOOT optional | Move, click pauses | Star lean and ship bank |
 
 Sketches that draw on the OLED still paint the onboard e-paper once: a warning mark and the words `Content on other display`.
 

@@ -61,7 +61,9 @@ Do not move this signal to GP12 or GP13.
 
 `adxl-ridge` uses it two ways. In the menu, a click switches between Fly and Exit. In flight, a hold is the throttle, with the same half-second ease up and down. Leave the TF slot empty.
 
-`space-shooter` uses the same active-high module as fire, but on **RXD** (GPIO17), because GP3 is the joystick Y axis. `INPUT_PULLDOWN`, pressed is high. Hold to repeat. **BOOT** is wired in parallel with it and fires too. Debounce is 25 ms, sampled from a background task.
+`space-shooter` on the C6 uses the same active-high module as fire, but on **RXD** (GPIO17), because GP3 is the joystick Y axis. `INPUT_PULLDOWN`, pressed is high. Hold to repeat. **BOOT** is wired in parallel with it and fires too. Debounce is 25 ms, sampled from a background task.
+
+On the ESP32-C3 Super Mini that fire button is GPIO3, still active-high with a pull-down. **BOOT** (GPIO9) also fires, active-low, and it is a download strap: do not hold it low through reset. The GPIO3 button runs the game if BOOT is left unused.
 
 ## Two external buttons (stock ticker)
 

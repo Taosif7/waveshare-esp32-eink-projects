@@ -89,3 +89,18 @@ The 4-pin SH1106 from the other projects. GPIO8 stays the LED, and GPIO9 stays t
 | Jump, also | **BOOT** | 9, active-low |
 
 The **5V** pin is USB power. Do not feed the OLED from it. GPIO18 and GPIO19 stay on the USB cable.
+
+## Space shooter
+
+`space-shooter` env `esp32-c3-mini` uses this module. There is no e-paper and no ES8311, so the sketch skips the warning paint and leaves sound off. Joystick axes are ADC1. GPIO2 and GPIO8 stay unused straps. Full tables are in `space-shooter/README.md`.
+
+| Module pin | Board pin | GPIO |
+|------------|-----------|------|
+| OLED SDA | 6 | 6 |
+| OLED SCL | 7 | 7 |
+| ADXL345 SDA / SCL | 6 / 7 | same bus as the OLED |
+| Joystick VRx | 0 | 0, ADC1 |
+| Joystick VRy | 1 | 1, ADC1 |
+| Joystick SW | 10 | 10, active-low |
+| Fire SIG | 3 | 3, active-high |
+| Fire, also | BOOT | 9, active-low. Strap: do not hold low at reset |

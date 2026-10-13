@@ -1,5 +1,15 @@
 #include "eink_warn.h"
 
+#include "board_pins.h"
+
+#if !BOARD_HAS_EINK
+
+void eink_begin() {}
+
+void eink_show() {}
+
+#else
+
 #include <Arduino.h>
 #include <string.h>
 
@@ -155,3 +165,5 @@ void eink_show() {
   draw_centered(142, "other display", kScale);
   EPD_Display();
 }
+
+#endif

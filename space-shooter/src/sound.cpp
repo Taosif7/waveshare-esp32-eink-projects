@@ -1,5 +1,7 @@
 #include "sound.h"
 
+#include "board_pins.h"
+
 #include <math.h>
 
 #include <Arduino.h>
@@ -243,6 +245,10 @@ uint32_t durationMs(Sfx sfx) {
 }  // namespace
 
 bool sound_init() {
+#if !BOARD_HAS_SOUND
+  Serial.println("No ES8311 on this board. Sound stays off.");
+  return false;
+#else
   if (!initI2s()) {
     Serial.println("I2S did not start; speaker stays quiet.");
     return false;
@@ -262,6 +268,7 @@ bool sound_init() {
   gReady = true;
   Serial.println("Speaker tones on.");
   return true;
+#endif
 }
 
 void sound_set_enabled(bool enabled) {
