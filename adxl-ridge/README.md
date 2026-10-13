@@ -45,7 +45,7 @@ The sketch opens on a menu over the range.
 | Nose down | Drop toward the valley |
 | **GP3** hold, in flight | Throttle. Speed eases up, then back when you let go |
 
-The range is a wireframe grid. Tall peaks stand above level flight. Hold the nose up to climb over them, or turn aside. Flying into one tears the picture until you are clear.
+The range is a wireframe grid under a sky of stars. The stars grow out of the point ahead and slip past the wings, and they stretch into lines while the throttle is held. Tall peaks stand above level flight. Hold the nose up to climb over them, or turn aside. Flying into one stops the plane: the glass tears, then **CRASH** stays up with a few bands still sliding. **BOOT** opens the menu. Fly backs you off the crest.
 
 Tip the board about halfway up from flat toward upright, so Y reads about -0.65 g. That pose is level. The onboard speaker plays a low engine drone and rises with the throttle.
 

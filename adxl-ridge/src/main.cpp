@@ -64,7 +64,7 @@ static constexpr float kBoostPeak = 3.2f;
 static constexpr float kClearance = 8.0f;
 static constexpr float kClimb = 46.0f;
 static constexpr float kTurn = 0.95f;
-static constexpr uint32_t kGlitchMs = 280;
+static constexpr uint32_t kCrashBurstMs = 900;
 
 #if defined(OLED_SH1106)
 static U8G2_SH1106_128X64_NONAME_F_HW_I2C display(
@@ -85,7 +85,9 @@ static float gHeading = 0.0f;
 static float gTravel = 0.0f;
 static bool gMenu = true;
 static int gItem = 0;
-static uint32_t gGlitchUntil = 0;
+static bool gCrashed = false;
+static uint32_t gCrashAt = 0;
+static float gStarTime = 0.0f;
 
 static bool writeDevReg(uint8_t addr, uint8_t reg, uint8_t value) {
   Wire.beginTransmission(addr);
@@ -542,6 +544,98 @@ static int shipScreenY(float pitch) {
   return y;
 }
 
+struct Star {
+  int8_t along;
+  int8_t up;
+  uint8_t kind;
+};
+
+// along spreads across the sky, up lifts off the horizon. Depth shrinks as
+// you fly, so each star grows out of the point ahead and slips past the wings.
+static const Star kStars[] = {
+    {-18, 2, 0}, {-14, 7, 1}, {-16, 4, 2}, {-10, 9, 0}, {-8, 3, 1}, {-5, 6, 2},
+    {-2, 2, 0},  {0, 8, 1},   {3, 4, 2},   {6, 9, 0},   {9, 3, 1},   {12, 6, 0},
+    {16, 2, 2},  {18, 8, 1},  {-12, 5, 0}, {7, 7, 2},   {-7, 8, 1},  {14, 4, 0},
+    {-20, 6, 2}, {4, 5, 0},   {-6, 1, 0},  {11, 1, 1},  {-3, 1, 2},  {2, 3, 0},
+};
+
+static void projectSky(float rawX, float rawY, float cr, float sr, float pivotX, float pivotY, int &sx, int &sy) {
+  const float dx = rawX - pivotX;
+  const float dy = rawY - pivotY;
+  sx = static_cast<int>(lroundf(pivotX + dx * cr + dy * sr));
+  sy = static_cast<int>(lroundf(pivotY - dx * sr + dy * cr));
+}
+
+static void drawStars(float pitch, float roll, int shipY, float warp) {
+  const float bank = clampf(roll, -kMaxBank, kMaxBank);
+  const float nose = clampf(pitch, -kMaxPitch, kMaxPitch);
+  const float horizonY = kHorizon + nose * kPitchPx;
+  const float cr = cosf(bank);
+  const float sr = sinf(bank);
+  const float pivotX = static_cast<float>(kShipX);
+  const float pivotY = static_cast<float>(shipY);
+  constexpr float kStarFocal = 22.0f;
+  constexpr float kStarNear = 1.15f;
+  constexpr float kStarSpan = 7.6f;
+
+  display.setDrawColor(1);
+  const int count = static_cast<int>(sizeof(kStars) / sizeof(kStars[0]));
+  for (int i = 0; i < count; ++i) {
+    const Star &star = kStars[i];
+    if (warp < 2.0f && star.kind == 2 &&
+        ((millis() / 180 + static_cast<uint32_t>(i)) % 5) == 0) {
+      continue;
+    }
+    const float speed = 0.85f * (0.75f + static_cast<float>(i % 4) * 0.18f);
+    float depth = kStarSpan - fmodf(gStarTime * speed + static_cast<float>(i) * 0.85f, kStarSpan);
+    if (depth < 0.0f) {
+      depth += kStarSpan;
+    }
+    depth += kStarNear;
+    const float along = static_cast<float>(star.along) * kStarFocal / depth;
+    const float up = static_cast<float>(star.up) * kStarFocal / depth;
+    const float rawX = 63.5f + along;
+    const float rawY = horizonY - up;
+    int sx = 0;
+    int sy = 0;
+    projectSky(rawX, rawY, cr, sr, pivotX, pivotY, sx, sy);
+
+    const float streak = (warp - 1.0f) * 1.15f;
+    const float radius = sqrtf(along * along + up * up);
+    if (streak >= 1.4f && radius > 2.0f) {
+      float len = streak;
+      if (len > radius * 0.8f) {
+        len = radius * 0.8f;
+      }
+      const float ux = along / radius;
+      const float uy = up / radius;
+      int x0 = 0;
+      int y0 = 0;
+      projectSky(rawX - ux * len, rawY + uy * len, cr, sr, pivotX, pivotY, x0, y0);
+      drawSeg(x0, y0, sx, sy);
+      continue;
+    }
+    if (sx < 0 || sy < 0 || sx > 127 || sy > 63) {
+      continue;
+    }
+    display.drawPixel(sx, sy);
+    if (star.kind == 1 || depth < 2.2f) {
+      if (sx > 0) {
+        display.drawPixel(sx - 1, sy);
+      }
+      if (sx < 127) {
+        display.drawPixel(sx + 1, sy);
+      }
+      if (sy > 0) {
+        display.drawPixel(sx, sy - 1);
+      }
+      if (sy < 63) {
+        display.drawPixel(sx, sy + 1);
+      }
+    }
+  }
+}
+
 // Depth lines and cross lines of one mesh. A slice that has wrapped back to
 // the horizon is not joined to the slice passing under the wings.
 static void drawRidges(float pitch, float roll, int shipY) {
@@ -723,8 +817,7 @@ static void flushSolid() {
 
 // Filled rear view. White body, black rim, so it stays a solid shape on sky
 // and where a contour crosses the wings.
-static void drawShip(bool boosting, int cy) {
-  const int cx = kShipX;
+static void drawShip(bool boosting, int cx, int cy) {
   static const int8_t kNose[] = {-3, -5, 0, -11, 3, -5};
   static const int8_t kHull[] = {-7, -5, 7, -5, 9, 1, 6, 7, -6, 7, -9, 1};
   static const int8_t kWingL[] = {-6, -4, -29, -5, -29, 1, -6, 2};
@@ -813,11 +906,20 @@ static void onBootTap() {
   if (!gMenu) {
     gMenu = true;
     gItem = 0;
-    gGlitchUntil = 0;
     Serial.println("Menu");
     return;
   }
   if (gItem == 0) {
+    if (gCrashed) {
+      const float back = 12.0f;
+      gCamX -= sinf(gHeading) * back;
+      gCamZ -= cosf(gHeading) * back;
+      if (gTravel > back) {
+        gTravel -= back;
+      }
+      gCamH = rangeHeight(gCamX, gCamZ) + kClearance + 4.0f;
+      gCrashed = false;
+    }
     gMenu = false;
     Serial.println("Fly");
     return;
@@ -870,42 +972,97 @@ static void glitchSet(uint8_t *buf, int stride, int x, int y, bool on) {
   }
 }
 
-static void drawGlitch(uint32_t now) {
-  if (now >= gGlitchUntil) {
-    return;
+static void tearRow(uint8_t *buf, int stride, int y, int shift, bool invert, uint32_t noise) {
+  uint8_t row[128];
+  for (int x = 0; x < 128; ++x) {
+    row[x] = glitchPixel(buf, stride, x, y) ? 1 : 0;
   }
+  for (int x = 0; x < 128; ++x) {
+    const int src = x - shift;
+    bool on = false;
+    if (src >= 0 && src < 128) {
+      on = row[src] != 0;
+    } else {
+      on = ((noise >> (x & 7)) & 1u) != 0;
+    }
+    if (invert) {
+      on = !on;
+    }
+    glitchSet(buf, stride, x, y, on);
+  }
+}
+
+static void tearColumn(uint8_t *buf, int stride, int x, int shift, uint32_t noise) {
+  uint8_t col[64];
+  for (int y = 0; y < 64; ++y) {
+    col[y] = glitchPixel(buf, stride, x, y) ? 1 : 0;
+  }
+  for (int y = 0; y < 64; ++y) {
+    const int src = y - shift;
+    bool on = false;
+    if (src >= 0 && src < 64) {
+      on = col[src] != 0;
+    } else {
+      on = ((noise >> (y & 7)) & 1u) != 0;
+    }
+    glitchSet(buf, stride, x, y, on);
+  }
+}
+
+// Severe tears the whole glass. After the impact, a few bands keep sliding
+// so the picture stays broken until the menu takes over.
+static void drawGlitch(uint32_t now, bool severe) {
   uint8_t *buf = display.getBufferPtr();
   const int stride = static_cast<int>(display.getBufferTileWidth()) * 8;
-  uint8_t row[128];
   uint32_t noise = now * 747796405u + 2891336453u;
-  for (int band = 0; band < 7; ++band) {
+  const int bands = severe ? 14 : 4;
+  for (int band = 0; band < bands; ++band) {
     noise = noise * 1664525u + 1013904223u;
     const int y0 = static_cast<int>(noise >> 8) & 63;
-    const int rows = 1 + static_cast<int>((noise >> 3) & 1);
+    const int rows = severe ? 2 + static_cast<int>((noise >> 2) & 3) : 1;
     int shift = static_cast<int>((noise >> 16) & 31) - 15;
-    if (shift > -4 && shift < 4) {
-      shift = (noise & 1u) != 0 ? 11 : -11;
+    if (severe) {
+      shift *= 2;
     }
-    const bool invert = ((noise >> 5) & 3u) == 0;
+    if (shift > -6 && shift < 6) {
+      shift = (noise & 1u) != 0 ? 18 : -18;
+    }
+    const bool invert = severe ? ((noise >> 5) & 1u) == 0 : ((noise >> 5) & 3u) == 0;
     for (int y = y0; y < y0 + rows && y < 64; ++y) {
-      for (int x = 0; x < 128; ++x) {
-        row[x] = glitchPixel(buf, stride, x, y) ? 1 : 0;
-      }
-      for (int x = 0; x < 128; ++x) {
-        const int src = x - shift;
-        bool on = false;
-        if (src >= 0 && src < 128) {
-          on = row[src] != 0;
-        } else {
-          on = ((noise >> (x & 7)) & 1u) != 0;
-        }
-        if (invert) {
-          on = !on;
-        }
-        glitchSet(buf, stride, x, y, on);
+      tearRow(buf, stride, y, shift, invert, noise);
+    }
+  }
+  if (!severe) {
+    return;
+  }
+  for (int strip = 0; strip < 5; ++strip) {
+    noise = noise * 1664525u + 1013904223u;
+    const int x0 = static_cast<int>(noise >> 4) & 127;
+    const int shift = static_cast<int>((noise >> 12) & 15) - 7;
+    const int width = 2 + static_cast<int>((noise >> 18) & 3);
+    for (int x = x0; x < x0 + width && x < 128; ++x) {
+      tearColumn(buf, stride, x, shift == 0 ? 9 : shift, noise);
+    }
+  }
+}
+
+static void drawCrashLabel() {
+  display.setFont(u8g2_font_helvB12_tr);
+  display.setFontMode(1);
+  const char *text = "CRASH";
+  const int w = static_cast<int>(display.getStrWidth(text));
+  const int x = (128 - w) / 2;
+  const int y = 16;
+  display.setDrawColor(0);
+  for (int dy = -1; dy <= 1; ++dy) {
+    for (int dx = -1; dx <= 1; ++dx) {
+      if (dx != 0 || dy != 0) {
+        display.drawStr(x + dx, y + dy, text);
       }
     }
   }
+  display.setDrawColor(1);
+  display.drawStr(x, y, text);
 }
 
 static void fly(float pitch, float roll, float scale, float dt) {
@@ -988,7 +1145,7 @@ void loop() {
   pollMenuSelect();
 
   const uint32_t now = millis();
-  const bool throttle = !gMenu && digitalRead(kSelectPin) == HIGH;
+  const bool throttle = !gMenu && !gCrashed && digitalRead(kSelectPin) == HIGH;
   const float scale = boostScale(now, throttle);
   uint32_t dtMs = lastFrameMs == 0 ? 0 : now - lastFrameMs;
   lastFrameMs = now;
@@ -1021,28 +1178,45 @@ void loop() {
     live = gAdxlAddress != 0;
   }
 
-  if (!gMenu) {
+  if (!gMenu && !gCrashed) {
     fly(pitch, roll, scale, dt);
-    static bool inRock = false;
-    const bool hit = hitsMountain();
-    if (hit && !inRock) {
-      Serial.println("Hit");
+    if (hitsMountain()) {
+      gCrashed = true;
+      gCrashAt = now;
+      Serial.println("Crash");
     }
-    if (hit) {
-      gGlitchUntil = now + kGlitchMs;
-    }
-    inRock = hit;
   }
-  engineAudioSetWarp(gMenu ? 1.0f : scale);
+  if (!gCrashed) {
+    gStarTime += (gMenu ? 0.35f : scale) * dt;
+  }
+  float warp = gMenu ? 1.0f : scale;
+  if (gCrashed) {
+    warp = (now - gCrashAt) < 200 ? kBoostPeak : 1.0f;
+  }
+  engineAudioSetWarp(warp);
 
   display.clearBuffer();
   const int shipY = shipScreenY(pitch);
+  drawStars(pitch, roll, shipY, warp);
   drawRidges(pitch, roll, shipY);
-  drawShip(!gMenu && scale > 1.08f, shipY);
+  int shipX = kShipX;
+  int shipDrawY = shipY;
+  if (gCrashed && !gMenu) {
+    const uint32_t age = now - gCrashAt;
+    if (age < kCrashBurstMs) {
+      shipX += static_cast<int>((age / 40) & 7) - 3;
+      shipDrawY += static_cast<int>((age / 55) & 5) - 2;
+    } else {
+      shipX += 4;
+      shipDrawY += 3;
+    }
+  }
+  drawShip(!gMenu && !gCrashed && scale > 1.08f, shipX, shipDrawY);
   if (gMenu) {
     drawMenu();
-  } else {
-    drawGlitch(now);
+  } else if (gCrashed) {
+    drawCrashLabel();
+    drawGlitch(now, (now - gCrashAt) < kCrashBurstMs);
   }
   display.sendBuffer();
 

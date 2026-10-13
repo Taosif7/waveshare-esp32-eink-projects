@@ -61,7 +61,7 @@ The external button on GP3 is a warp hold for this sketch. It is not part of the
 
 ### Ridge (`adxl-ridge`)
 
-Same level pose as the horizon. Bank turns the heading, so a ridge you passed is still there when you come back. Nose up climbs high enough to clear the tall crests; nose down drops toward the valley. The picture is a wireframe grid of a seeded height field. Flying into a crest glitches the OLED until the plane climbs or turns clear. GP3 holds the throttle in flight and clicks between Fly and Exit in the menu. Exit drops the power latch.
+Same level pose as the horizon. Bank turns the heading, so a ridge you passed is still there when you come back. Nose up climbs high enough to clear the tall crests; nose down drops toward the valley. The picture is a wireframe grid under stars that grow out of the distance and streak with the throttle. Flying into a crest stops the flight: the OLED tears, then CRASH stays on the glass until BOOT opens the menu. Fly backs the plane off the crest. GP3 holds the throttle in flight and clicks between Fly and Exit in the menu. Exit drops the power latch.
 
 ## If it does not show up
 
