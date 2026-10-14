@@ -1,0 +1,22 @@
+# Copy this file to data/lyrics.txt, then upload LittleFS:
+#   pio run -t uploadfs
+# Each cue is mm:ss.xx|frame|text. frame is 1..16 (f01.png .. f16.png).
+# A line types out until the next timestamp. These lines are placeholders.
+# Frames 5, 11, and 15 are the left half of the glass, so those lines are short.
+
+00:00.00|1|Line one goes here
+00:04.00|2|Line two goes here
+00:08.00|3|Line three goes here
+00:12.00|4|Line four goes here
+00:16.00|5|Line five
+00:20.00|6|Line six goes here
+00:24.00|7|Line seven goes here
+00:28.00|8|Line eight goes here
+00:32.00|9|Line nine goes here
+00:36.00|10|Line ten goes here
+00:40.00|11|Line eleven
+00:44.00|12|Line twelve goes here
+00:48.00|13|Line thirteen goes here
+00:52.00|14|Line fourteen goes here
+00:56.00|15|Line fifteen
+01:00.00|16|Line sixteen goes here
