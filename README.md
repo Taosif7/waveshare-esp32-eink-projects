@@ -18,6 +18,18 @@ Projects for the [Waveshare ESP32-C6-ePaper-1.54](https://www.waveshare.com/esp3
 | [`adxl-horizon`](adxl-horizon/) | **ADXL horizon** — attitude indicator on the OLED, driven by an ADXL345 |
 | [`adxl-ridge`](adxl-ridge/) | **ADXL ridge** — topographic mountain flight on the OLED, steered by an ADXL345 |
 | [`odyssey-oled`](odyssey-oled/) | **Odyssey** — 121-frame OLED animation looping at ~15 fps |
+| [`upi-qr`](upi-qr/) | **UPI QR** — web form builds a UPI link; e-paper shows QR + board URL |
+
+## Wi-Fi (shared)
+
+Projects that join Wi-Fi (`upi-qr`, `stock-ticker`, …) read credentials from the **repo-root** `.env` at flash time:
+
+```bash
+cp .env.example .env
+# edit WIFI_SSID and WIFI_PASS
+```
+
+Do not commit `.env`. See `tools/load_wifi_env.py`.
 
 ## Hardware
 

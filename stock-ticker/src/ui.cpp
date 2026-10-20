@@ -229,8 +229,8 @@ static void draw_wifi_fail() {
   draw_frame();
   draw_text_centered(36, "WIFI FAIL", 2);
   EPD_DrawHLine(24, 58, EPD_WIDTH - 48, DRIVER_COLOR_BLACK);
-  draw_text_centered(76, "EDIT SSID IN", 1);
-  draw_text_centered(92, "WIFI CONFIG H", 1);
+  draw_text_centered(76, "EDIT ROOT", 1);
+  draw_text_centered(92, ".ENV FILE", 1);
   draw_text_centered(120, "THEN FLASH", 1);
   draw_text_centered(148, "ANY BTN: RETRY", 1);
 }

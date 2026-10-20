@@ -1,0 +1,231 @@
+#include "eink_status.h"
+
+#include <Arduino.h>
+#include <assert.h>
+#include <string.h>
+
+#include <qrcodegen.h>
+
+#include "epaper_config.h"
+#include "exio/esp_io_expander_tca9554.h"
+#include "port_display.h"
+#include "port_i2c.h"
+
+static const uint8_t FONT5X7[][5] = {
+    {0x00, 0x00, 0x00, 0x00, 0x00},  // space
+    {0x00, 0x00, 0x5F, 0x00, 0x00},  // !
+    {0x00, 0x07, 0x00, 0x07, 0x00},  // "
+    {0x14, 0x7F, 0x14, 0x7F, 0x14},  // #
+    {0x24, 0x2A, 0x7F, 0x2A, 0x12},  // $
+    {0x23, 0x13, 0x08, 0x64, 0x62},  // %
+    {0x36, 0x49, 0x55, 0x22, 0x50},  // &
+    {0x00, 0x05, 0x03, 0x00, 0x00},  // '
+    {0x00, 0x1C, 0x22, 0x41, 0x00},  // (
+    {0x00, 0x41, 0x22, 0x1C, 0x00},  // )
+    {0x14, 0x08, 0x3E, 0x08, 0x14},  // *
+    {0x08, 0x08, 0x3E, 0x08, 0x08},  // +
+    {0x00, 0x50, 0x30, 0x00, 0x00},  // ,
+    {0x08, 0x08, 0x08, 0x08, 0x08},  // -
+    {0x00, 0x60, 0x60, 0x00, 0x00},  // .
+    {0x20, 0x10, 0x08, 0x04, 0x02},  // /
+    {0x3E, 0x51, 0x49, 0x45, 0x3E},  // 0
+    {0x00, 0x42, 0x7F, 0x40, 0x00},  // 1
+    {0x42, 0x61, 0x51, 0x49, 0x46},  // 2
+    {0x21, 0x41, 0x45, 0x4B, 0x31},  // 3
+    {0x18, 0x14, 0x12, 0x7F, 0x10},  // 4
+    {0x27, 0x45, 0x45, 0x45, 0x39},  // 5
+    {0x3C, 0x4A, 0x49, 0x49, 0x30},  // 6
+    {0x01, 0x71, 0x09, 0x05, 0x03},  // 7
+    {0x36, 0x49, 0x49, 0x49, 0x36},  // 8
+    {0x06, 0x49, 0x49, 0x29, 0x1E},  // 9
+    {0x00, 0x36, 0x36, 0x00, 0x00},  // :
+    {0x00, 0x56, 0x36, 0x00, 0x00},  // ;
+    {0x08, 0x14, 0x22, 0x41, 0x00},  // <
+    {0x14, 0x14, 0x14, 0x14, 0x14},  // =
+    {0x00, 0x41, 0x22, 0x14, 0x08},  // >
+    {0x02, 0x01, 0x51, 0x09, 0x06},  // ?
+    {0x32, 0x49, 0x79, 0x41, 0x3E},  // @
+    {0x7E, 0x11, 0x11, 0x11, 0x7E},  // A
+    {0x7F, 0x49, 0x49, 0x49, 0x36},  // B
+    {0x3E, 0x41, 0x41, 0x41, 0x22},  // C
+    {0x7F, 0x41, 0x41, 0x22, 0x1C},  // D
+    {0x7F, 0x49, 0x49, 0x49, 0x41},  // E
+    {0x7F, 0x09, 0x09, 0x09, 0x01},  // F
+    {0x3E, 0x41, 0x49, 0x49, 0x7A},  // G
+    {0x7F, 0x08, 0x08, 0x08, 0x7F},  // H
+    {0x00, 0x41, 0x7F, 0x41, 0x00},  // I
+    {0x20, 0x40, 0x41, 0x3F, 0x01},  // J
+    {0x7F, 0x08, 0x14, 0x22, 0x41},  // K
+    {0x7F, 0x40, 0x40, 0x40, 0x40},  // L
+    {0x7F, 0x02, 0x0C, 0x02, 0x7F},  // M
+    {0x7F, 0x04, 0x08, 0x10, 0x7F},  // N
+    {0x3E, 0x41, 0x41, 0x41, 0x3E},  // O
+    {0x7F, 0x09, 0x09, 0x09, 0x06},  // P
+    {0x3E, 0x41, 0x51, 0x21, 0x5E},  // Q
+    {0x7F, 0x09, 0x19, 0x29, 0x46},  // R
+    {0x46, 0x49, 0x49, 0x49, 0x31},  // S
+    {0x01, 0x01, 0x7F, 0x01, 0x01},  // T
+    {0x3F, 0x40, 0x40, 0x40, 0x3F},  // U
+    {0x1F, 0x20, 0x40, 0x20, 0x1F},  // V
+    {0x3F, 0x40, 0x38, 0x40, 0x3F},  // W
+    {0x63, 0x14, 0x08, 0x14, 0x63},  // X
+    {0x07, 0x08, 0x70, 0x08, 0x07},  // Y
+    {0x61, 0x51, 0x49, 0x45, 0x43},  // Z
+};
+
+static const uint8_t kLower[26][5] = {
+    {0x20, 0x54, 0x54, 0x54, 0x78}, {0x7F, 0x48, 0x44, 0x44, 0x38},
+    {0x38, 0x44, 0x44, 0x44, 0x20}, {0x38, 0x44, 0x44, 0x48, 0x7F},
+    {0x38, 0x54, 0x54, 0x54, 0x18}, {0x08, 0x7E, 0x09, 0x01, 0x02},
+    {0x0C, 0x52, 0x52, 0x52, 0x3E}, {0x7F, 0x08, 0x04, 0x04, 0x78},
+    {0x00, 0x44, 0x7D, 0x40, 0x00}, {0x20, 0x40, 0x44, 0x3D, 0x00},
+    {0x7F, 0x10, 0x28, 0x44, 0x00}, {0x00, 0x41, 0x7F, 0x40, 0x00},
+    {0x7C, 0x04, 0x18, 0x04, 0x78}, {0x7C, 0x08, 0x04, 0x04, 0x78},
+    {0x38, 0x44, 0x44, 0x44, 0x38}, {0x7C, 0x14, 0x14, 0x14, 0x08},
+    {0x08, 0x14, 0x14, 0x18, 0x7C}, {0x7C, 0x08, 0x04, 0x04, 0x08},
+    {0x48, 0x54, 0x54, 0x54, 0x20}, {0x04, 0x3F, 0x44, 0x40, 0x20},
+    {0x3C, 0x40, 0x40, 0x20, 0x7C}, {0x1C, 0x20, 0x40, 0x20, 0x1C},
+    {0x3C, 0x40, 0x30, 0x40, 0x3C}, {0x44, 0x28, 0x10, 0x28, 0x44},
+    {0x0C, 0x50, 0x50, 0x50, 0x3C}, {0x44, 0x64, 0x54, 0x4C, 0x44},
+};
+
+static I2cMasterBus *i2c_bus = nullptr;
+static esp_io_expander_handle_t io_expander = nullptr;
+
+static const uint8_t *glyph(char c) {
+  if (c >= 'a' && c <= 'z') {
+    return kLower[c - 'a'];
+  }
+  if (c < ' ' || c > 'Z') {
+    return FONT5X7[0];
+  }
+  return FONT5X7[c - ' '];
+}
+
+static void draw_char(int16_t x, int16_t y, char c, uint8_t scale) {
+  const uint8_t *g = glyph(c);
+  for (int col = 0; col < 5; ++col) {
+    const uint8_t bits = g[col];
+    for (int row = 0; row < 7; ++row) {
+      if ((bits & (1 << row)) != 0) {
+        EPD_FillRect(x + col * scale, y + row * scale, scale, scale, DRIVER_COLOR_BLACK);
+      }
+    }
+  }
+}
+
+static void draw_text(int16_t x, int16_t y, const char *text, uint8_t scale) {
+  while (*text != '\0') {
+    draw_char(x, y, *text, scale);
+    x = static_cast<int16_t>(x + 6 * scale);
+    ++text;
+  }
+}
+
+static void draw_centered(int16_t y, const char *text, uint8_t scale) {
+  if (text == nullptr || text[0] == '\0') {
+    return;
+  }
+  const int16_t width = static_cast<int16_t>(strlen(text) * 6 * scale);
+  int16_t x = static_cast<int16_t>((EPD_WIDTH - width) / 2);
+  if (x < 0) {
+    x = 0;
+  }
+  draw_text(x, y, text, scale);
+}
+
+static void board_power_on() {
+  i2c_bus = I2cMasterBus::requestInstance(ESP32_I2C_SCL_PIN, ESP32_I2C_SDA_PIN, ESP32_I2C_DEV_NUM);
+  assert(i2c_bus);
+  ESP_ERROR_CHECK(esp_io_expander_new_i2c_tca9554(
+      i2c_bus->Get_I2cBusHandle(), ESP_IO_EXPANDER_I2C_TCA9554_ADDRESS_000, &io_expander));
+  ESP_ERROR_CHECK(esp_io_expander_set_dir(
+      io_expander,
+      IO_EXPANDER_PIN_NUM_0 | IO_EXPANDER_PIN_NUM_1 | IO_EXPANDER_PIN_NUM_3 | IO_EXPANDER_PIN_NUM_5,
+      IO_EXPANDER_OUTPUT));
+  ESP_ERROR_CHECK(esp_io_expander_set_level(
+      io_expander,
+      IO_EXPANDER_PIN_NUM_0 | IO_EXPANDER_PIN_NUM_1 | IO_EXPANDER_PIN_NUM_3 | IO_EXPANDER_PIN_NUM_5, 1));
+}
+
+void eink_status_begin(void) {
+  board_power_on();
+  PortDisplay_Init();
+  EPD_Init();
+  EPD_Clear();
+  EPD_Display();
+}
+
+void eink_status_show(const char *title, const char *line1, const char *line2, const char *line3) {
+  EPD_Clear();
+  draw_centered(24, title != nullptr ? title : "", 2);
+  EPD_DrawHLine(24, 52, EPD_WIDTH - 48, DRIVER_COLOR_BLACK);
+  draw_centered(72, line1 != nullptr ? line1 : "", 1);
+  draw_centered(96, line2 != nullptr ? line2 : "", 1);
+  draw_centered(120, line3 != nullptr ? line3 : "", 1);
+  EPD_Display();
+}
+
+bool eink_show_qr(const char *payload, const char *web_url) {
+  if (payload == nullptr || payload[0] == '\0') {
+    return false;
+  }
+
+  // Nayuki qrcodegen — correct encoder, buffers in BSS (not stack VLAs).
+  constexpr int kMaxVersion = 10;
+  constexpr int16_t kUrlBand = 16;
+  constexpr int16_t kQrArea = EPD_HEIGHT - kUrlBand;
+  constexpr int kQuietModules = 4;
+  constexpr int kMinScale = 3;
+
+  static uint8_t tempBuffer[qrcodegen_BUFFER_LEN_FOR_VERSION(kMaxVersion)];
+  static uint8_t qrcode[qrcodegen_BUFFER_LEN_FOR_VERSION(kMaxVersion)];
+
+  bool ok = false;
+  // Prefer medium ECC; fall back to low if the string needs a smaller version
+  // so modules stay chunky enough for phone cameras on a 200px panel.
+  const enum qrcodegen_Ecc ecc_try[] = {qrcodegen_Ecc_MEDIUM, qrcodegen_Ecc_LOW};
+  for (size_t i = 0; i < 2; ++i) {
+    if (qrcodegen_encodeText(payload, tempBuffer, qrcode, ecc_try[i], 1, kMaxVersion,
+                             qrcodegen_Mask_AUTO, true)) {
+      ok = true;
+      break;
+    }
+  }
+  if (!ok) {
+    Serial.printf("QR encode failed (%u chars)\n", (unsigned)strlen(payload));
+    return false;
+  }
+
+  const int size = qrcodegen_getSize(qrcode);
+  const int scale = static_cast<int>(kQrArea) / (size + 2 * kQuietModules);
+  if (scale < kMinScale) {
+    Serial.printf("QR too dense for panel (modules=%d). Shorten fields.\n", size);
+    return false;
+  }
+
+  const int16_t side = static_cast<int16_t>(size * scale);
+  const int16_t quiet_px = static_cast<int16_t>(kQuietModules * scale);
+  const int16_t total = static_cast<int16_t>(side + 2 * quiet_px);
+  const int16_t frame_x = static_cast<int16_t>((EPD_WIDTH - total) / 2);
+  const int16_t frame_y = static_cast<int16_t>(kUrlBand + (kQrArea - total) / 2);
+  const int16_t origin_x = static_cast<int16_t>(frame_x + quiet_px);
+  const int16_t origin_y = static_cast<int16_t>(frame_y + quiet_px);
+
+  EPD_Clear();
+  draw_centered(4, web_url != nullptr ? web_url : "", 1);
+
+  for (int y = 0; y < size; ++y) {
+    for (int x = 0; x < size; ++x) {
+      if (qrcodegen_getModule(qrcode, x, y)) {
+        EPD_FillRect(origin_x + x * scale, origin_y + y * scale, scale, scale, DRIVER_COLOR_BLACK);
+      }
+    }
+  }
+
+  EPD_Display();
+
+  Serial.printf("QR modules=%d scale=%d quiet=%d payload=%u\n", size, scale, quiet_px,
+                (unsigned)strlen(payload));
+  return true;
+}

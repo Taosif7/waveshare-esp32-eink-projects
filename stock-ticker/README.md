@@ -46,14 +46,15 @@ Hold **green** to buy ~`FUN_ORDER_VALUE` of the open chart; hold **red** to sell
 
 ## Wi-Fi
 
-Edit `src/wifi_config.h` before flashing (copy from `src/wifi_config.example.h`):
+Credentials come from the **repo-root** `.env` (shared with other projects):
 
-```c
-#define WIFI_SSID "your-ssid"
-#define WIFI_PASS "your-password"
+```bash
+# once, from the repo root
+cp .env.example .env
+# set WIFI_SSID and WIFI_PASS
 ```
 
-The ESP32-C6 has Wi-Fi 6 onboard; no extra radio is required.
+`tools/load_wifi_env.py` injects them at build/flash time. Shell exports override the file. The ESP32-C6 has Wi-Fi 6 onboard; no extra radio is required.
 
 ## Price API
 
@@ -73,7 +74,7 @@ This endpoint is unofficial (Yahoo can change it). It is the best zero-signup op
 | [Twelve Data](https://twelvedata.com) | 8 calls/min, 800/day | Too slow for 1 s polls on the free plan. |
 | [Alpha Vantage](https://www.alphavantage.co) | 25 requests/day | Not usable for live refresh. |
 
-Finnhub is the drop-in upgrade if you want a documented SLA: put a token in `wifi_config.h` and swap `yahoo.cpp`. Keep Yahoo unless you hit HTTP 429.
+Finnhub is the drop-in upgrade if you want a documented SLA: add a token (e.g. in source or `.env` + a build macro) and swap `yahoo.cpp`. Keep Yahoo unless you hit HTTP 429.
 
 Indian names use NSE Yahoo symbols (`RELIANCE.NS`, `^NSEI`). US names use the plain ticker (`AAPL`, `^IXIC`).
 
@@ -84,9 +85,9 @@ A 1-second cadence uses **partial refresh** (~0.3 s). The HTTP fetch often takes
 ## Build & flash
 
 ```bash
-# 1. Set SSID/password in src/wifi_config.h
+# 1. Set WIFI_SSID / WIFI_PASS in the repo-root .env
 export PATH="$HOME/.platformio/penv/bin:$PATH"
-cd ~/Desktop/waveshare-esp32-eink-projects/stock-ticker
+cd stock-ticker
 pio run -t upload
 pio device monitor
 ```

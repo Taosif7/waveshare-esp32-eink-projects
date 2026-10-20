@@ -192,6 +192,22 @@
         "group": "Flash",
         "order": 12
       }
+    },
+    {
+      "name": "upi-qr",
+      "type": "node",
+      "request": "launch",
+      "preLaunchTask": "flash: upi-qr",
+      "runtimeArgs": [
+        "-e",
+        "process.exit(0)"
+      ],
+      "console": "internalConsole",
+      "internalConsoleOptions": "neverOpen",
+      "presentation": {
+        "group": "Flash",
+        "order": 13
+      }
     }
   ]
 }
