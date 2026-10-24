@@ -18,6 +18,7 @@ Projects for the [Waveshare ESP32-C6-ePaper-1.54](https://www.waveshare.com/esp3
 | [`adxl-horizon`](adxl-horizon/) | **ADXL horizon** — attitude indicator on the OLED, driven by an ADXL345 |
 | [`adxl-ridge`](adxl-ridge/) | **ADXL ridge** — topographic mountain flight on the OLED, steered by an ADXL345 |
 | [`odyssey-oled`](odyssey-oled/) | **Odyssey** — 121-frame OLED animation looping at ~15 fps |
+| [`juliet-oled`](juliet-oled/) | **Juliet** — 2414-frame OLED animation on the ESP32-C3 Super Mini |
 
 ## Hardware
 
