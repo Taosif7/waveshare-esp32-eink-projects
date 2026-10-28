@@ -66,6 +66,38 @@
       }
     },
     {
+      "name": "claude-desk",
+      "type": "node",
+      "request": "launch",
+      "preLaunchTask": "flash: claude-desk",
+      "runtimeArgs": [
+        "-e",
+        "process.exit(0)"
+      ],
+      "console": "internalConsole",
+      "internalConsoleOptions": "neverOpen",
+      "presentation": {
+        "group": "Flash",
+        "order": 5
+      }
+    },
+    {
+      "name": "cocktail-lab",
+      "type": "node",
+      "request": "launch",
+      "preLaunchTask": "flash: cocktail-lab",
+      "runtimeArgs": [
+        "-e",
+        "process.exit(0)"
+      ],
+      "console": "internalConsole",
+      "internalConsoleOptions": "neverOpen",
+      "presentation": {
+        "group": "Flash",
+        "order": 6
+      }
+    },
+    {
       "name": "dino-game",
       "type": "node",
       "request": "launch",
@@ -78,7 +110,7 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 5
+        "order": 7
       }
     },
     {
@@ -94,7 +126,7 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 6
+        "order": 8
       }
     },
     {
@@ -110,7 +142,23 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 7
+        "order": 9
+      }
+    },
+    {
+      "name": "mini-doom",
+      "type": "node",
+      "request": "launch",
+      "preLaunchTask": "flash: mini-doom",
+      "runtimeArgs": [
+        "-e",
+        "process.exit(0)"
+      ],
+      "console": "internalConsole",
+      "internalConsoleOptions": "neverOpen",
+      "presentation": {
+        "group": "Flash",
+        "order": 10
       }
     },
     {
@@ -126,7 +174,7 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 8
+        "order": 11
       }
     },
     {
@@ -142,7 +190,7 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 9
+        "order": 12
       }
     },
     {
@@ -158,7 +206,7 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 10
+        "order": 13
       }
     },
     {
@@ -174,7 +222,23 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 11
+        "order": 14
+      }
+    },
+    {
+      "name": "sling-bird",
+      "type": "node",
+      "request": "launch",
+      "preLaunchTask": "flash: sling-bird",
+      "runtimeArgs": [
+        "-e",
+        "process.exit(0)"
+      ],
+      "console": "internalConsole",
+      "internalConsoleOptions": "neverOpen",
+      "presentation": {
+        "group": "Flash",
+        "order": 15
       }
     },
     {
@@ -190,7 +254,7 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 12
+        "order": 16
       }
     },
     {
@@ -206,7 +270,23 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 13
+        "order": 17
+      }
+    },
+    {
+      "name": "touch-pot-test",
+      "type": "node",
+      "request": "launch",
+      "preLaunchTask": "flash: touch-pot-test",
+      "runtimeArgs": [
+        "-e",
+        "process.exit(0)"
+      ],
+      "console": "internalConsole",
+      "internalConsoleOptions": "neverOpen",
+      "presentation": {
+        "group": "Flash",
+        "order": 18
       }
     }
   ]

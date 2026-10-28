@@ -104,3 +104,24 @@ The **5V** pin is USB power. Do not feed the OLED from it. GPIO18 and GPIO19 sta
 | Joystick SW | 10 | 10, active-low |
 | Fire SIG | 3 | 3, active-high |
 | Fire, also | BOOT | 9, active-low. Strap: do not hold low at reset |
+
+## Touch + potentiometer test
+
+`touch-pot-test` uses the same OLED pins. Five touch pads and one pot; see [touch-sensor.md](touch-sensor.md) and [potentiometer.md](potentiometer.md). Do not run this wiring at the same time as space-shooter's fire button on GPIO3 or its joystick pins.
+
+| Module pin | Board pin | GPIO |
+|------------|-----------|------|
+| OLED SDA / SCL | 6 / 7 | 6 / 7 |
+| Touch 1–5 SIG | 4, 10, 20, 21, 1 | digital, active-high by default |
+| Pot SIG | 3 | 3, ADC1_CH3 |
+
+## Mini Doom
+
+`mini-doom` uses the space-shooter stick and OLED, plus one touch pad as fire. GPIO4 is that pad, so it does not share GPIO10 with the stick click. An optional active-high button on GPIO3 also fires. Do not combine this with the five-pad touch wiring: pad 2 is GPIO10, which is the stick click here.
+
+| Module pin | Board pin | GPIO |
+|------------|-----------|------|
+| OLED SDA / SCL | 6 / 7 | 6 / 7 |
+| Joystick VRx / VRy / SW | 0 / 1 / 10 | 0, 1, 10 |
+| Touch SIG (fire) | 4 | 4, active-high |
+| Fire button (optional) | 3 | 3, active-high |

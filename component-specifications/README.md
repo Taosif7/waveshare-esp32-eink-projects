@@ -11,6 +11,8 @@ Lab notes for the hardware this repo actually drives. Pin numbers, addresses, an
 | [joystick.md](joystick.md) | Analog stick on the expansion header |
 | [adxl345.md](adxl345.md) | ADXL345 accelerometer on the shared I2C header |
 | [esp32-c3-mini-1.md](esp32-c3-mini-1.md) | Espressif ESP32-C3-MINI-1 module: identity from a USB read, and the pads it brings out |
+| [touch-sensor.md](touch-sensor.md) | 3-pin capacitive touch module (digital SIG) on the C3 Super Mini |
+| [potentiometer.md](potentiometer.md) | 3-pin potentiometer module (analog SIG) on the C3 Super Mini |
 
 ## Which project uses what
 
@@ -28,6 +30,8 @@ Lab notes for the hardware this repo actually drives. Pin numbers, addresses, an
 | `adxl-horizon` | warning notice | UI | BOOT, PWR, external on GP3 (warp) | | attitude |
 | `adxl-ridge` | warning notice | UI | BOOT (menu), PWR (off), external on GP3 (menu / throttle) | | flight |
 | `space-shooter` | C6: warning notice. C3: none | UI, portrait 64×128 | C6: BOOT and RXD. C3: GPIO3, BOOT optional | Move, click pauses | Star lean and ship bank |
+| `touch-pot-test` | | UI (C3) | Touch SIG on GPIO4/10/20/21/1; pot SIG on GPIO3 | | |
+| `cocktail-lab` | | UI (C3) | Same pads/pot: flavors + flow tap | | |
 
 Sketches that draw on the OLED still paint the onboard e-paper once: a warning mark and the words `Content on other display`.
 
