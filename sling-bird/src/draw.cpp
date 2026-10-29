@@ -29,20 +29,126 @@ int shake_y(const Game *game) {
   return (game->frame & 2) != 0 ? 1 : -1;
 }
 
-void plot(const Game *game, int x, int y) {
-  const int sx = x - game->camX + shake_x(game);
-  const int sy = y + shake_y(game);
-  if (sx < 0 || sy < 0 || sx >= kScreenW || sy >= kScreenH) {
-    return;
-  }
-  display.drawPixel(static_cast<u8g2_uint_t>(sx), static_cast<u8g2_uint_t>(sy));
-}
-
 void plot_screen(int x, int y) {
   if (x < 0 || y < 0 || x >= kScreenW || y >= kScreenH) {
     return;
   }
   display.drawPixel(static_cast<u8g2_uint_t>(x), static_cast<u8g2_uint_t>(y));
+}
+
+void world_to_screen(const Game *game, int x, int y, int *sx, int *sy) {
+  const int32_t zoom = game->camZoom > 0 ? game->camZoom : kOne;
+  *sx = static_cast<int>((static_cast<int64_t>(x - game->camX) * zoom) / kOne) + kScreenW / 2 + shake_x(game);
+  *sy = static_cast<int>((static_cast<int64_t>(y - game->camY) * zoom) / kOne) + kScreenH / 2 + shake_y(game);
+}
+
+int clip_code(int x, int y) {
+  int code = 0;
+  if (x < 0) {
+    code |= 1;
+  } else if (x >= kScreenW) {
+    code |= 2;
+  }
+  if (y < 0) {
+    code |= 4;
+  } else if (y >= kScreenH) {
+    code |= 8;
+  }
+  return code;
+}
+
+bool clip_segment(int *x0, int *y0, int *x1, int *y1) {
+  int c0 = clip_code(*x0, *y0);
+  int c1 = clip_code(*x1, *y1);
+  for (int guard = 0; guard < 8; ++guard) {
+    if ((c0 | c1) == 0) {
+      return true;
+    }
+    if ((c0 & c1) != 0) {
+      return false;
+    }
+    const int code = c0 != 0 ? c0 : c1;
+    int x = 0;
+    int y = 0;
+    const int dx = *x1 - *x0;
+    const int dy = *y1 - *y0;
+    if ((code & 8) != 0 && dy != 0) {
+      x = *x0 + dx * (kScreenH - 1 - *y0) / dy;
+      y = kScreenH - 1;
+    } else if ((code & 4) != 0 && dy != 0) {
+      x = *x0 + dx * (0 - *y0) / dy;
+      y = 0;
+    } else if ((code & 2) != 0 && dx != 0) {
+      y = *y0 + dy * (kScreenW - 1 - *x0) / dx;
+      x = kScreenW - 1;
+    } else if (dx != 0) {
+      y = *y0 + dy * (0 - *x0) / dx;
+      x = 0;
+    } else {
+      return false;
+    }
+    if (code == c0) {
+      *x0 = x;
+      *y0 = y;
+      c0 = clip_code(x, y);
+    } else {
+      *x1 = x;
+      *y1 = y;
+      c1 = clip_code(x, y);
+    }
+  }
+  return (c0 | c1) == 0;
+}
+
+void line_screen(int x0, int y0, int x1, int y1) {
+  if (!clip_segment(&x0, &y0, &x1, &y1)) {
+    return;
+  }
+  int dx = x1 - x0;
+  int dy = y1 - y0;
+  const int sx = dx < 0 ? -1 : 1;
+  const int sy = dy < 0 ? -1 : 1;
+  if (dx < 0) {
+    dx = -dx;
+  }
+  if (dy < 0) {
+    dy = -dy;
+  }
+  int err = dx - dy;
+  for (int n = 0; n < 200; ++n) {
+    plot_screen(x0, y0);
+    if (x0 == x1 && y0 == y1) {
+      return;
+    }
+    const int e2 = err * 2;
+    if (e2 > -dy) {
+      err -= dy;
+      x0 += sx;
+    }
+    if (e2 < dx) {
+      err += dx;
+      y0 += sy;
+    }
+  }
+}
+
+void plot(const Game *game, int x, int y) {
+  const int32_t zoom = game->camZoom > 0 ? game->camZoom : kOne;
+  const int sx = static_cast<int>((static_cast<int64_t>(x - game->camX) * zoom) / kOne) + kScreenW / 2 +
+                 shake_x(game);
+  const int sy = static_cast<int>((static_cast<int64_t>(y - game->camY) * zoom) / kOne) + kScreenH / 2 +
+                 shake_y(game);
+  int stamp = static_cast<int>((zoom + kOne - 1) / kOne);
+  if (stamp < 1) {
+    stamp = 1;
+  } else if (stamp > 3) {
+    stamp = 3;
+  }
+  for (int dy = 0; dy < stamp; ++dy) {
+    for (int dx = 0; dx < stamp; ++dx) {
+      plot_screen(sx + dx, sy + dy);
+    }
+  }
 }
 
 bool sprite_on(const uint8_t *bmp, int w, int x, int y) {
@@ -270,11 +376,125 @@ void draw_arc(const Game *game, const Pose &pose) {
   }
 }
 
-void draw_ground(const Game *game) {
-  const int start = (game->camX / kGroundW) * kGroundW - kGroundW;
-  for (int x = start; x < game->camX + kScreenW + kGroundW; x += kGroundW) {
-    blit_world(game, x, kGroundY, kGroundW, kGroundH, kGround);
+void fill_disc(const Game *game, int cx, int cy, int r, int holeX, int holeY) {
+  const int r2 = r * r;
+  for (int y = -r; y <= r; ++y) {
+    for (int x = -r; x <= r; ++x) {
+      if (x * x + y * y > r2) {
+        continue;
+      }
+      const int dx = x - holeX;
+      const int dy = y - holeY;
+      if (dx * dx + dy * dy <= 1) {
+        continue;
+      }
+      plot(game, cx + x, cy + y);
+    }
   }
+}
+
+void draw_sky(const Game *game) {
+  const int sunX = 18;
+  const int sunY = 16;
+  for (int y = -3; y <= 3; ++y) {
+    for (int x = -3; x <= 3; ++x) {
+      const int d = x * x + y * y;
+      if (d >= 7 && d <= 10) {
+        plot(game, sunX + x, sunY + y);
+      }
+    }
+  }
+}
+
+void draw_ground(const Game *game) {
+  int sx = 0;
+  int sy = 0;
+  world_to_screen(game, game->camX, kGroundY, &sx, &sy);
+  if (sy < 0 || sy >= kScreenH) {
+    return;
+  }
+  display.drawHLine(0, static_cast<u8g2_uint_t>(sy), kScreenW);
+}
+
+void paint_box(const Game *game, int cx, int cy, int hw, int hh, int32_t ang) {
+  if (hw < 1) {
+    hw = 1;
+  }
+  if (hh < 1) {
+    hh = 1;
+  }
+  const int32_t c = fxCos(ang);
+  const int32_t s = fxSin(ang);
+  int px[4];
+  int py[4];
+  const int cornerX[4] = {-hw, hw, hw, -hw};
+  const int cornerY[4] = {-hh, -hh, hh, hh};
+  for (int i = 0; i < 4; ++i) {
+    const int lx = cornerX[i];
+    const int ly = cornerY[i];
+    const int wx = cx + static_cast<int>((static_cast<int64_t>(c) * lx + static_cast<int64_t>(s) * ly) >> 16);
+    const int wy = cy + static_cast<int>((static_cast<int64_t>(-s) * lx + static_cast<int64_t>(c) * ly) >> 16);
+    world_to_screen(game, wx, wy, &px[i], &py[i]);
+  }
+  for (int i = 0; i < 4; ++i) {
+    const int n = (i + 1) & 3;
+    line_screen(px[i], py[i], px[n], py[n]);
+  }
+}
+
+void draw_pig(const Game *game, int cx, int cy, int r, bool angry) {
+  fill_disc(game, cx, cy, r, -1, -1);
+  plot(game, cx - 2, cy - r - 1);
+  plot(game, cx + 2, cy - r - 1);
+  plot(game, cx - r - 1, cy);
+  plot(game, cx - r - 1, cy + 1);
+  if (angry) {
+    plot(game, cx - 3, cy - 2);
+    plot(game, cx + 1, cy - 2);
+  }
+}
+
+void circle_screen(int cx, int cy, int r) {
+  int x = r;
+  int y = 0;
+  int err = 1 - x;
+  while (x >= y) {
+    plot_screen(cx + x, cy + y);
+    plot_screen(cx + y, cy + x);
+    plot_screen(cx - y, cy + x);
+    plot_screen(cx - x, cy + y);
+    plot_screen(cx - x, cy - y);
+    plot_screen(cx - y, cy - x);
+    plot_screen(cx + y, cy - x);
+    plot_screen(cx + x, cy - y);
+    y++;
+    if (err < 0) {
+      err += 2 * y + 1;
+    } else {
+      x--;
+      err += 2 * (y - x) + 1;
+    }
+  }
+}
+
+void draw_round_bird(const Game *game, int cx, int cy, int r, int32_t c, int32_t s, bool hit) {
+  int sx = 0;
+  int sy = 0;
+  world_to_screen(game, cx, cy, &sx, &sy);
+  const int32_t zoom = game->camZoom > 0 ? game->camZoom : kOne;
+  int sr = static_cast<int>((static_cast<int64_t>(hit ? r - 1 : r) * zoom) / kOne);
+  if (sr < 2) {
+    sr = 2;
+  } else if (sr > 6) {
+    sr = 6;
+  }
+  circle_screen(sx, sy, sr);
+  const int eye = sr / 2;
+  plot_screen(sx + static_cast<int>((static_cast<int64_t>(c) * eye) >> 16),
+              sy + static_cast<int>((static_cast<int64_t>(-s) * eye) >> 16));
+  const int beak = sr + 2;
+  plot_screen(sx + static_cast<int>((static_cast<int64_t>(c) * beak) >> 16),
+              sy + static_cast<int>((static_cast<int64_t>(-s) * beak) >> 16));
 }
 
 void draw_bits(const Game *game) {
@@ -318,36 +538,17 @@ int32_t len_speed(int32_t vx, int32_t vy) {
 
 void draw_bird_sprite(const Game *game, int cx, int cy, int32_t ang, bool launch, bool hit, bool aimBird,
                       int pullFrame, int32_t vx, int32_t vy) {
-  if (hit) {
-    blit_rot(game, cx, cy, kBirdHitW, kBirdHitH, kBirdHit, ang);
-    return;
-  }
-  if (launch) {
-    const int frame = (game->frame / 2) & 1;
-    blit_rot(game, cx, cy, kBirdLaunchW, kBirdLaunchH, kBirdLaunch[frame], ang);
-    return;
-  }
-  if (aimBird) {
-    blit_rot(game, cx, cy, kBirdPullW, kBirdPullH, kBirdPull[pullFrame], ang);
-    return;
-  }
-  int index = fly_index(vx, vy);
-  if (index < 0) {
-    index = 0;
-  }
-  if (index >= kBirdFlyN) {
-    index = kBirdFlyN - 1;
-  }
-  blit_world(game, cx - kBirdFlyW / 2, cy - kBirdFlyH / 2, kBirdFlyW, kBirdFlyH, kBirdFly[index]);
+  (void)launch;
+  (void)aimBird;
+  (void)pullFrame;
+  int32_t c = fxCos(ang);
+  int32_t s = fxSin(ang);
   const int speedPx = static_cast<int>(len_speed(vx, vy) >> 16);
-  if (speedPx > 70) {
-    const int ux = static_cast<int>((vx / speedPx) >> 16);
-    const int uy = static_cast<int>((vy / speedPx) >> 16);
-    const uint8_t *trail = (game->frame & 2) != 0 ? kTrail1 : kTrail0;
-    const int tw = (game->frame & 2) != 0 ? kTrail1W : kTrail0W;
-    const int th = (game->frame & 2) != 0 ? kTrail1H : kTrail0H;
-    blit_world(game, cx - ux * 8 - tw / 2, cy - uy * 8 - th / 2, tw, th, trail);
+  if (!aimBird && !hit && speedPx > 15) {
+    c = vx / speedPx;
+    s = -vy / speedPx;
   }
+  draw_round_bird(game, cx, cy, 4, c, s, hit);
 }
 
 void draw_bodies(const Game *game) {
@@ -356,12 +557,13 @@ void draw_bodies(const Game *game) {
     if (!body.alive || body.mat == Mat::Bird) {
       continue;
     }
-    int w = 0;
-    int h = 0;
-    const uint8_t *bmp = body_sprite(body, &w, &h);
     const int cx = static_cast<int>(body.x >> 16);
     const int cy = static_cast<int>(body.y >> 16);
-    blit_rot(game, cx, cy, w, h, bmp, body.ang);
+    if (body.mat == Mat::Pig) {
+      draw_pig(game, cx, cy, body.hw < 3 ? 3 : body.hw, !body.asleep);
+      continue;
+    }
+    paint_box(game, cx, cy, body.hw, body.hh, body.ang);
   }
   for (int i = 0; i < kMaxBodies; ++i) {
     const Body &body = game->world.bodies[i];
@@ -377,11 +579,14 @@ void draw_bodies(const Game *game) {
 }
 
 void draw_sling(const Game *game, const Pose &pose) {
-  const int frame = pose.slingFrame;
-  blit_rot(game, pose.forkX, pose.forkY, kSlingW, kSlingH, kSling[frame], game->angle);
+  line_world(game, pose.forkX, kGroundY - 1, pose.forkX, pose.forkY);
+  line_world(game, pose.forkX + 1, kGroundY - 1, pose.forkX + 1, pose.forkY);
+  line_world(game, pose.forkX, pose.forkY, pose.tipX[0], pose.tipY[0]);
+  line_world(game, pose.forkX, pose.forkY, pose.tipX[1], pose.tipY[1]);
   if (game->phase == Phase::Aim) {
     line_world(game, pose.tipX[0], pose.tipY[0], pose.birdX, pose.birdY);
     line_world(game, pose.tipX[1], pose.tipY[1], pose.birdX, pose.birdY);
+    line_world(game, pose.tipX[0] + 1, pose.tipY[0], pose.birdX + 1, pose.birdY);
     draw_bird_sprite(game, pose.birdX, pose.birdY, game->angle, false, false, true, pose.pullFrame, 0, 0);
   }
 }
@@ -466,6 +671,7 @@ void draw_game(const Game *game) {
   display.clearBuffer();
   Pose pose;
   game_pose(game, &pose);
+  draw_sky(game);
   draw_ground(game);
   draw_bodies(game);
   draw_sling(game, pose);

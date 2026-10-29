@@ -68,10 +68,13 @@ struct Game {
   uint8_t launchT;
   uint8_t hitT;
   int camX;
+  int camY;
+  int32_t camZoom;
   int shakeT;
   int shakeMag;
   int settle;
   uint32_t shotMs;
+  uint16_t flightMs;
   uint16_t frame;
   Bit bits[kMaxBits];
   Puff puff;

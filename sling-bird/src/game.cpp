@@ -83,7 +83,10 @@ void load_level(Game *game) {
   game->won = false;
   game->cleared = false;
   game->shakeT = 0;
-  game->camX = 0;
+  game->camX = kForkX;
+  game->camY = 38;
+  game->camZoom = kOne * 5 / 4;
+  game->flightMs = 0;
   game->checkpoint = game->score;
   const int32_t up = kOne / 4;
   if (game->level <= 0) {
@@ -316,6 +319,72 @@ void apply_hits(Game *game) {
   }
 }
 
+uint64_t isqrt_u64(uint64_t n) {
+  uint64_t root = 0;
+  uint64_t bit = 1ULL << 62;
+  while (bit > n) {
+    bit >>= 2;
+  }
+  while (bit != 0) {
+    if (n >= root + bit) {
+      n -= root + bit;
+      root = (root >> 1) + bit;
+    } else {
+      root >>= 1;
+    }
+    bit >>= 2;
+  }
+  return root;
+}
+
+int predict_flight_ms(int y0, int32_t vy) {
+  const int land = kGroundY - 5;
+  int drop = y0 - land;
+  if (drop > -2) {
+    drop = -2;
+  }
+  const int64_t disc = (static_cast<int64_t>(vy) * vy) / kOne - static_cast<int64_t>(2) * kGravity * drop;
+  if (disc <= 0) {
+    return 800;
+  }
+  const int64_t root = static_cast<int64_t>(isqrt_u64(static_cast<uint64_t>(disc))) << 8;
+  const int64_t numer = -static_cast<int64_t>(vy) + root;
+  if (numer <= 0) {
+    return 800;
+  }
+  int ms = static_cast<int>((numer / 260) * 1000 / kOne);
+  if (ms < 400) {
+    ms = 400;
+  } else if (ms > 2200) {
+    ms = 2200;
+  }
+  return ms;
+}
+
+void ease_to(int *cur, int target, int div) {
+  const int delta = target - *cur;
+  if (delta == 0) {
+    return;
+  }
+  int step = delta / div;
+  if (step == 0) {
+    step = delta > 0 ? 1 : -1;
+  }
+  *cur += step;
+}
+
+void ease_zoom(int32_t *cur, int32_t target, int div) {
+  const int32_t delta = target - *cur;
+  if (delta == 0) {
+    return;
+  }
+  int32_t step = delta / div;
+  if (step == 0) {
+    step = delta > 0 ? 1 : -1;
+  }
+  *cur += step;
+}
+
 void launch(Game *game, uint32_t nowMs) {
   if (game->birdsLeft <= 0) {
     return;
@@ -352,6 +421,7 @@ void launch(Game *game, uint32_t nowMs) {
   game->hitT = 0;
   game->phase = Phase::Flying;
   game->shotMs = nowMs;
+  game->flightMs = static_cast<uint16_t>(predict_flight_ms(pose.birdY, bird.vy));
   game->settle = 0;
   game->puff.alive = true;
   game->puff.x = bird.x;
@@ -436,21 +506,65 @@ void move_bits(Game *game) {
   }
 }
 
-void update_camera(Game *game) {
-  int target = 0;
+void update_camera(Game *game, uint32_t nowMs) {
+  constexpr int32_t kZoomWide = kOne * 5 / 4;
+  constexpr int32_t kZoomTight = kOne * 5 / 2;
+  int targetX = kForkX;
+  int targetY = 38;
+  int32_t targetZoom = kZoomWide;
+  bool onArc = false;
   if (game->phase == Phase::Flying && game->bird >= 0 && game->world.bodies[game->bird].alive) {
-    target = static_cast<int>(game->world.bodies[game->bird].x >> 16) - 48;
+    const Body &bird = game->world.bodies[game->bird];
+    const int32_t speed = fxAbs(bird.vx) + fxAbs(bird.vy);
+    const uint32_t elapsed = nowMs - game->shotMs;
+    targetX = static_cast<int>(bird.x >> 16) + static_cast<int>(bird.vx / (kOne * 14));
+    targetY = static_cast<int>(bird.y >> 16) + static_cast<int>(bird.vy / (kOne * 14));
+    if (game->flightMs > 0 && elapsed < game->flightMs && speed > 18 * kOne) {
+      onArc = true;
+      int32_t along = static_cast<int32_t>((static_cast<uint64_t>(elapsed) * kOne) / game->flightMs);
+      if (along < 0) {
+        along = 0;
+      } else if (along > kOne) {
+        along = kOne;
+      }
+      const int32_t bell = fxSin(along / 2);
+      targetZoom = kZoomWide + static_cast<int32_t>((static_cast<int64_t>(kZoomTight - kZoomWide) * bell) / kOne);
+    }
   } else if (game->phase != Phase::Aim) {
-    target = game->camX;
+    int n = 0;
+    int sumX = 0;
+    int sumY = 0;
+    for (int i = 0; i < kMaxBodies; ++i) {
+      const Body &body = game->world.bodies[i];
+      if (!body.alive || body.mat == Mat::Bird) {
+        continue;
+      }
+      sumX += static_cast<int>(body.x >> 16);
+      sumY += static_cast<int>(body.y >> 16);
+      n++;
+    }
+    if (n > 0) {
+      targetX = sumX / n;
+      targetY = sumY / n;
+    } else {
+      targetX = game->camX;
+      targetY = game->camY;
+    }
   }
-  if (target < 0) {
-    target = 0;
+  if (targetX < 16) {
+    targetX = 16;
+  } else if (targetX > kWorldW - 16) {
+    targetX = kWorldW - 16;
   }
-  const int maxCam = kWorldW - kScreenW;
-  if (target > maxCam) {
-    target = maxCam;
+  if (targetY < 14) {
+    targetY = 14;
+  } else if (targetY > kGroundY - 6) {
+    targetY = kGroundY - 6;
   }
-  game->camX += (target - game->camX) / 4;
+  const int div = onArc ? 2 : 4;
+  ease_to(&game->camX, targetX, div);
+  ease_to(&game->camY, targetY, div);
+  ease_zoom(&game->camZoom, targetZoom, onArc ? 2 : 4);
 }
 
 void cull_bird(Game *game) {
@@ -477,15 +591,15 @@ void game_pose(const Game *game, Pose *pose) {
   int shy = 0;
   if (game->drawing || game->pullPose) {
     pull = 6 + static_cast<int>((game->power * 16) >> 16);
-    if ((game->drawing || game->pullPose) && game->shake) {
-      const int amp = game->power > (kOne / 2) ? 2 : 1;
-      shy = ((game->frame / 2) & 1) != 0 ? amp : -amp;
+    const int pullStep = static_cast<int>((static_cast<int64_t>(game->power) * 4) / kOne);
+    if ((game->drawing || game->pullPose) && game->shake && pullStep >= 4) {
+      shy = ((game->frame / 2) & 1) != 0 ? 2 : -2;
     }
   }
   local_to_world(kForkX, kForkY, game->angle, -pull, shy, &pose->birdX, &pose->birdY);
-  local_to_world(kForkX, kForkY, game->angle, 0, shy, &pose->forkX, &pose->forkY);
-  local_to_world(kForkX, kForkY, game->angle, 2, -7 + shy, &pose->tipX[0], &pose->tipY[0]);
-  local_to_world(kForkX, kForkY, game->angle, 2, 7 + shy, &pose->tipX[1], &pose->tipY[1]);
+  local_to_world(kForkX, kForkY, game->angle, 0, 0, &pose->forkX, &pose->forkY);
+  local_to_world(kForkX, kForkY, game->angle, 2, -7, &pose->tipX[0], &pose->tipY[0]);
+  local_to_world(kForkX, kForkY, game->angle, 2, 7, &pose->tipX[1], &pose->tipY[1]);
   int sling = static_cast<int>((game->power * kSlingN) >> 16);
   if (!game->drawing && !game->pullPose) {
     sling = 0;
@@ -575,5 +689,5 @@ void game_step(Game *game, uint32_t nowMs) {
   }
 
   move_bits(game);
-  update_camera(game);
+  update_camera(game, nowMs);
 }
