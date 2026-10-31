@@ -210,6 +210,22 @@
       }
     },
     {
+      "name": "pot-probe",
+      "type": "node",
+      "request": "launch",
+      "preLaunchTask": "flash: pot-probe",
+      "runtimeArgs": [
+        "-e",
+        "process.exit(0)"
+      ],
+      "console": "internalConsole",
+      "internalConsoleOptions": "neverOpen",
+      "presentation": {
+        "group": "Flash",
+        "order": 14
+      }
+    },
+    {
       "name": "rps-game",
       "type": "node",
       "request": "launch",
@@ -222,7 +238,7 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 14
+        "order": 15
       }
     },
     {
@@ -238,7 +254,7 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 15
+        "order": 16
       }
     },
     {
@@ -254,7 +270,7 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 16
+        "order": 17
       }
     },
     {
@@ -270,7 +286,7 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 17
+        "order": 18
       }
     },
     {
@@ -286,7 +302,7 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 18
+        "order": 19
       }
     }
   ]

@@ -301,6 +301,29 @@
       }
     },
     {
+      "label": "flash: pot-probe",
+      "type": "process",
+      "command": "${env:HOME}/.platformio/penv/bin/pio",
+      "args": [
+        "run",
+        "-t",
+        "upload"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}/pot-probe"
+      },
+      "group": "build",
+      "problemMatcher": [],
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": true,
+        "panel": "shared",
+        "showReuseMessage": false,
+        "clear": true
+      }
+    },
+    {
       "label": "flash: rps-game",
       "type": "process",
       "command": "${env:HOME}/.platformio/penv/bin/pio",

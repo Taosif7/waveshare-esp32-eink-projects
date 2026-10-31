@@ -269,6 +269,25 @@ void shatter_glass(Game *game, const Body &parent) {
   }
 }
 
+void vanish_bird(Game *game) {
+  if (game->bird < 0) {
+    return;
+  }
+  Body &bird = game->world.bodies[game->bird];
+  if (bird.alive) {
+    game->puff.alive = true;
+    game->puff.x = bird.x;
+    game->puff.y = bird.y;
+    game->puff.vx = 0;
+    game->puff.vy = -8 * kOne;
+    game->puff.frame = 0;
+    game->puff.tick = 0;
+    bird.alive = false;
+  }
+  game->bird = -1;
+  game->hitT = 0;
+}
+
 void apply_hits(Game *game) {
   bool was[kMaxBodies];
   int hit[kMaxBodies];
@@ -289,6 +308,7 @@ void apply_hits(Game *game) {
     const int x = static_cast<int>(body.x >> 16);
     const int y = static_cast<int>(body.y >> 16);
     if (body.mat == Mat::Bird) {
+      // Stay visible through the crash; vanish_bird runs once the shot settles.
       if (i == game->bird) {
         game->hitT = 8;
       }
@@ -420,6 +440,7 @@ void launch(Game *game, uint32_t nowMs) {
 }
 
 void finish_shot(Game *game) {
+  vanish_bird(game);
   if (!pigs_left(game)) {
     game->score += 50 * game->birdsLeft;
     game->won = true;
@@ -645,8 +666,7 @@ void cull_bird(Game *game) {
   const int x = static_cast<int>(bird.x >> 16);
   const int y = static_cast<int>(bird.y >> 16);
   if (x < -24 || x > kWorldW + 24 || y > kGroundY + 28) {
-    bird.alive = false;
-    game->bird = -1;
+    vanish_bird(game);
   }
 }
 
