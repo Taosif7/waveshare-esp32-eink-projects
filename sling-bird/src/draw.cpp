@@ -15,20 +15,6 @@ constexpr int kOledScl = 9;
 
 U8G2_SH1106_128X64_NONAME_F_HW_I2C display(U8G2_R0, U8X8_PIN_NONE, kOledScl, kOledSda);
 
-int shake_x(const Game *game) {
-  if (game->shakeT <= 0) {
-    return 0;
-  }
-  return (game->frame & 1) != 0 ? game->shakeMag : -game->shakeMag;
-}
-
-int shake_y(const Game *game) {
-  if (game->shakeT <= 0) {
-    return 0;
-  }
-  return (game->frame & 2) != 0 ? 1 : -1;
-}
-
 void plot_screen(int x, int y) {
   if (x < 0 || y < 0 || x >= kScreenW || y >= kScreenH) {
     return;
@@ -37,9 +23,7 @@ void plot_screen(int x, int y) {
 }
 
 void world_to_screen(const Game *game, int x, int y, int *sx, int *sy) {
-  const int32_t zoom = game->camZoom > 0 ? game->camZoom : kOne;
-  *sx = static_cast<int>((static_cast<int64_t>(x - game->camX) * zoom) / kOne) + kScreenW / 2 + shake_x(game);
-  *sy = static_cast<int>((static_cast<int64_t>(y - game->camY) * zoom) / kOne) + kScreenH / 2 + shake_y(game);
+  camera_world_to_screen(&game->cam, x, y, sx, sy);
 }
 
 int clip_code(int x, int y) {
@@ -133,15 +117,11 @@ void line_screen(int x0, int y0, int x1, int y1) {
 }
 
 void plot(const Game *game, int x, int y) {
-  const int32_t zoom = game->camZoom > 0 ? game->camZoom : kOne;
-  const int sx = static_cast<int>((static_cast<int64_t>(x - game->camX) * zoom) / kOne) + kScreenW / 2 +
-                 shake_x(game);
-  const int sy = static_cast<int>((static_cast<int64_t>(y - game->camY) * zoom) / kOne) + kScreenH / 2 +
-                 shake_y(game);
-  int stamp = static_cast<int>((zoom + kOne - 1) / kOne);
-  if (stamp < 1) {
-    stamp = 1;
-  } else if (stamp > 3) {
+  int sx = 0;
+  int sy = 0;
+  world_to_screen(game, x, y, &sx, &sy);
+  int stamp = camera_scale(&game->cam, 1);
+  if (stamp > 3) {
     stamp = 3;
   }
   for (int dy = 0; dy < stamp; ++dy) {
@@ -156,16 +136,6 @@ bool sprite_on(const uint8_t *bmp, int w, int x, int y) {
   return (bmp[y * span + (x >> 3)] & (1 << (x & 7))) != 0;
 }
 
-void blit_world(const Game *game, int x, int y, int w, int h, const uint8_t *bmp) {
-  for (int row = 0; row < h; ++row) {
-    for (int col = 0; col < w; ++col) {
-      if (sprite_on(bmp, w, col, row)) {
-        plot(game, x + col, y + row);
-      }
-    }
-  }
-}
-
 void blit_screen(int x, int y, int w, int h, const uint8_t *bmp) {
   for (int row = 0; row < h; ++row) {
     for (int col = 0; col < w; ++col) {
@@ -176,29 +146,65 @@ void blit_screen(int x, int y, int w, int h, const uint8_t *bmp) {
   }
 }
 
-void blit_rot(const Game *game, int cx, int cy, int w, int h, const uint8_t *bmp, int32_t ang) {
-  int32_t a = ang % kOne;
-  if (a < 0) {
-    a += kOne;
+// Draw a 1-bit sprite centered on a world point. Art size is treated as world pixels
+// times scaleN/scaleD, then multiplied by the camera zoom.
+void blit_world_sprite(const Game *game, int wx, int wy, int w, int h, const uint8_t *bmp, int scaleN,
+                       int scaleD) {
+  if (scaleN < 1) {
+    scaleN = 1;
   }
-  if (a < 1200 || a > kOne - 1200) {
-    blit_world(game, cx - w / 2, cy - h / 2, w, h, bmp);
+  if (scaleD < 1) {
+    scaleD = 1;
+  }
+  int sx = 0;
+  int sy = 0;
+  world_to_screen(game, wx, wy, &sx, &sy);
+  const int dw = camera_scale(&game->cam, (w * scaleN + scaleD / 2) / scaleD);
+  const int dh = camera_scale(&game->cam, (h * scaleN + scaleD / 2) / scaleD);
+  if (dw < 1 || dh < 1) {
     return;
   }
-  const int32_t c = fxCos(a);
-  const int32_t s = fxSin(a);
-  const int rad = (w > h ? w : h) / 2 + 2;
+  const int ox = sx - dw / 2;
+  const int oy = sy - dh / 2;
+  for (int dy = 0; dy < dh; ++dy) {
+    const int row = dy * h / dh;
+    for (int dx = 0; dx < dw; ++dx) {
+      const int col = dx * w / dw;
+      if (sprite_on(bmp, w, col, row)) {
+        plot_screen(ox + dx, oy + dy);
+      }
+    }
+  }
+}
+
+void blit_anchored(const Game *game, int wx, int wy, int w, int h, const uint8_t *bmp) {
+  blit_world_sprite(game, wx, wy, w, h, bmp, 1, 1);
+}
+
+// Draw a rotated sprite centered on a world point. worldW/worldH is the
+// collision-matched on-screen size in world pixels; artW/artH is the bitmap.
+void blit_facing(const Game *game, int wx, int wy, int artW, int artH, const uint8_t *bmp, int32_t c,
+                 int32_t s, int worldW, int worldH) {
+  int sx = 0;
+  int sy = 0;
+  world_to_screen(game, wx, wy, &sx, &sy);
+  const int sw = camera_scale(&game->cam, worldW);
+  const int sh = camera_scale(&game->cam, worldH);
+  if (sw < 1 || sh < 1) {
+    return;
+  }
+  const int rad = (sw > sh ? sw : sh) / 2 + 1;
   for (int dy = -rad; dy <= rad; ++dy) {
     for (int dx = -rad; dx <= rad; ++dx) {
-      const int32_t lx = fxMul(static_cast<int32_t>(dx) << 16, c) + fxMul(static_cast<int32_t>(dy) << 16, -s);
-      const int32_t ly = fxMul(static_cast<int32_t>(dx) << 16, s) + fxMul(static_cast<int32_t>(dy) << 16, c);
-      const int ix = static_cast<int>(lx >> 16) + w / 2;
-      const int iy = static_cast<int>(ly >> 16) + h / 2;
-      if (ix < 0 || iy < 0 || ix >= w || iy >= h) {
+      const int lx = static_cast<int>((static_cast<int64_t>(c) * dx - static_cast<int64_t>(s) * dy) >> 16);
+      const int ly = static_cast<int>((static_cast<int64_t>(s) * dx + static_cast<int64_t>(c) * dy) >> 16);
+      const int col = lx * artW / sw + artW / 2;
+      const int row = ly * artH / sh + artH / 2;
+      if (col < 0 || row < 0 || col >= artW || row >= artH) {
         continue;
       }
-      if (sprite_on(bmp, w, ix, iy)) {
-        plot(game, cx + dx, cy + dy);
+      if (sprite_on(bmp, artW, col, row)) {
+        plot_screen(sx + dx, sy + dy);
       }
     }
   }
@@ -376,40 +382,10 @@ void draw_arc(const Game *game, const Pose &pose) {
   }
 }
 
-void fill_disc(const Game *game, int cx, int cy, int r, int holeX, int holeY) {
-  const int r2 = r * r;
-  for (int y = -r; y <= r; ++y) {
-    for (int x = -r; x <= r; ++x) {
-      if (x * x + y * y > r2) {
-        continue;
-      }
-      const int dx = x - holeX;
-      const int dy = y - holeY;
-      if (dx * dx + dy * dy <= 1) {
-        continue;
-      }
-      plot(game, cx + x, cy + y);
-    }
-  }
-}
-
-void draw_sky(const Game *game) {
-  const int sunX = 18;
-  const int sunY = 16;
-  for (int y = -3; y <= 3; ++y) {
-    for (int x = -3; x <= 3; ++x) {
-      const int d = x * x + y * y;
-      if (d >= 7 && d <= 10) {
-        plot(game, sunX + x, sunY + y);
-      }
-    }
-  }
-}
-
 void draw_ground(const Game *game) {
   int sx = 0;
   int sy = 0;
-  world_to_screen(game, game->camX, kGroundY, &sx, &sy);
+  world_to_screen(game, game->cam.x, kGroundY, &sx, &sy);
   if (sy < 0 || sy >= kScreenH) {
     return;
   }
@@ -442,59 +418,9 @@ void paint_box(const Game *game, int cx, int cy, int hw, int hh, int32_t ang) {
   }
 }
 
-void draw_pig(const Game *game, int cx, int cy, int r, bool angry) {
-  fill_disc(game, cx, cy, r, -1, -1);
-  plot(game, cx - 2, cy - r - 1);
-  plot(game, cx + 2, cy - r - 1);
-  plot(game, cx - r - 1, cy);
-  plot(game, cx - r - 1, cy + 1);
-  if (angry) {
-    plot(game, cx - 3, cy - 2);
-    plot(game, cx + 1, cy - 2);
-  }
-}
-
-void circle_screen(int cx, int cy, int r) {
-  int x = r;
-  int y = 0;
-  int err = 1 - x;
-  while (x >= y) {
-    plot_screen(cx + x, cy + y);
-    plot_screen(cx + y, cy + x);
-    plot_screen(cx - y, cy + x);
-    plot_screen(cx - x, cy + y);
-    plot_screen(cx - x, cy - y);
-    plot_screen(cx - y, cy - x);
-    plot_screen(cx + y, cy - x);
-    plot_screen(cx + x, cy - y);
-    y++;
-    if (err < 0) {
-      err += 2 * y + 1;
-    } else {
-      x--;
-      err += 2 * (y - x) + 1;
-    }
-  }
-}
-
-void draw_round_bird(const Game *game, int cx, int cy, int r, int32_t c, int32_t s, bool hit) {
-  int sx = 0;
-  int sy = 0;
-  world_to_screen(game, cx, cy, &sx, &sy);
-  const int32_t zoom = game->camZoom > 0 ? game->camZoom : kOne;
-  int sr = static_cast<int>((static_cast<int64_t>(hit ? r - 1 : r) * zoom) / kOne);
-  if (sr < 2) {
-    sr = 2;
-  } else if (sr > 6) {
-    sr = 6;
-  }
-  circle_screen(sx, sy, sr);
-  const int eye = sr / 2;
-  plot_screen(sx + static_cast<int>((static_cast<int64_t>(c) * eye) >> 16),
-              sy + static_cast<int>((static_cast<int64_t>(-s) * eye) >> 16));
-  const int beak = sr + 2;
-  plot_screen(sx + static_cast<int>((static_cast<int64_t>(c) * beak) >> 16),
-              sy + static_cast<int>((static_cast<int64_t>(-s) * beak) >> 16));
+void draw_pig(const Game *game, int cx, int cy) {
+  // Scale the 23×23 art down to the pig's collision diameter.
+  blit_world_sprite(game, cx, cy, kPigArtW, kPigArtH, kPigArt, kPigR * 2, kPigArtW);
 }
 
 void draw_bits(const Game *game) {
@@ -524,9 +450,9 @@ void draw_bits(const Game *game) {
       w = big ? kFeatherBigW : kFeatherSmallW;
       h = big ? kFeatherBigH : kFeatherSmallH;
     }
-    const int x = static_cast<int>(bit.x >> 16) - w / 2;
-    const int y = static_cast<int>(bit.y >> 16) - h / 2;
-    blit_world(game, x, y, w, h, bmp);
+    const int x = static_cast<int>(bit.x >> 16);
+    const int y = static_cast<int>(bit.y >> 16);
+    blit_world_sprite(game, x, y, w, h, bmp, 1, 1);
   }
 }
 
@@ -548,7 +474,7 @@ void draw_bird_sprite(const Game *game, int cx, int cy, int32_t ang, bool launch
     c = vx / speedPx;
     s = -vy / speedPx;
   }
-  draw_round_bird(game, cx, cy, 4, c, s, hit);
+  blit_facing(game, cx, cy, kBirdArtW, kBirdArtH, kBirdArt, c, s, kBirdR * 2, kBirdR * 2);
 }
 
 void draw_bodies(const Game *game) {
@@ -560,7 +486,7 @@ void draw_bodies(const Game *game) {
     const int cx = static_cast<int>(body.x >> 16);
     const int cy = static_cast<int>(body.y >> 16);
     if (body.mat == Mat::Pig) {
-      draw_pig(game, cx, cy, body.hw < 3 ? 3 : body.hw, !body.asleep);
+      draw_pig(game, cx, cy);
       continue;
     }
     paint_box(game, cx, cy, body.hw, body.hh, body.ang);
@@ -578,15 +504,48 @@ void draw_bodies(const Game *game) {
   }
 }
 
+void bird_bottom(const Game *game, int wx, int wy, int32_t ang, int *sx, int *sy) {
+  world_to_screen(game, wx, wy, sx, sy);
+  const int32_t c = fxCos(ang);
+  const int32_t s = fxSin(ang);
+  const int belly = camera_scale(&game->cam, kBirdR);
+  *sx += static_cast<int>((static_cast<int64_t>(s) * belly) >> 16);
+  *sy += static_cast<int>((static_cast<int64_t>(c) * belly) >> 16);
+}
+
+int sling_src_to_screen(const Game *game, int src) {
+  // Art is authored at 1:1; display at 7/5 of that, then apply camera zoom.
+  return camera_scale(&game->cam, src * 7 / 5);
+}
+
 void draw_sling(const Game *game, const Pose &pose) {
-  line_world(game, pose.forkX, kGroundY - 1, pose.forkX, pose.forkY);
-  line_world(game, pose.forkX + 1, kGroundY - 1, pose.forkX + 1, pose.forkY);
-  line_world(game, pose.forkX, pose.forkY, pose.tipX[0], pose.tipY[0]);
-  line_world(game, pose.forkX, pose.forkY, pose.tipX[1], pose.tipY[1]);
+  int fx = 0;
+  int gy = 0;
+  world_to_screen(game, kForkX, kGroundY, &fx, &gy);
+  constexpr int kCrotchX = 11;
+  constexpr int kBaseRow = 28;
+  constexpr int kTipX[2] = {3, 19};
+  constexpr int kTipY[2] = {4, 5};
+  const int ox = fx - sling_src_to_screen(game, kCrotchX);
+  const int oy = gy - sling_src_to_screen(game, kBaseRow + 1) + 1;
+  // Inverse-sample the sling into the zoomed screen rect.
+  const int dw = sling_src_to_screen(game, kSlingArtW);
+  const int dh = sling_src_to_screen(game, kSlingArtH);
+  for (int dy = 0; dy < dh; ++dy) {
+    const int row = dy * kSlingArtH / dh;
+    for (int dx = 0; dx < dw; ++dx) {
+      const int col = dx * kSlingArtW / dw;
+      if (sprite_on(kSlingArt, kSlingArtW, col, row)) {
+        plot_screen(ox + dx, oy + dy);
+      }
+    }
+  }
   if (game->phase == Phase::Aim) {
-    line_world(game, pose.tipX[0], pose.tipY[0], pose.birdX, pose.birdY);
-    line_world(game, pose.tipX[1], pose.tipY[1], pose.birdX, pose.birdY);
-    line_world(game, pose.tipX[0] + 1, pose.tipY[0], pose.birdX + 1, pose.birdY);
+    int bx = 0;
+    int by = 0;
+    bird_bottom(game, pose.birdX, pose.birdY, game->angle, &bx, &by);
+    line_screen(ox + sling_src_to_screen(game, kTipX[0]), oy + sling_src_to_screen(game, kTipY[0]), bx, by);
+    line_screen(ox + sling_src_to_screen(game, kTipX[1]), oy + sling_src_to_screen(game, kTipY[1]), bx, by);
     draw_bird_sprite(game, pose.birdX, pose.birdY, game->angle, false, false, true, pose.pullFrame, 0, 0);
   }
 }
@@ -595,7 +554,16 @@ void draw_flashes(const Game *game) {
   if (game->puff.alive && game->puff.frame < kPuffN) {
     const int x = static_cast<int>(game->puff.x >> 16);
     const int y = static_cast<int>(game->puff.y >> 16);
-    blit_world(game, x - kPuffW / 2, y - kPuffH / 2, kPuffW, kPuffH, kPuff[game->puff.frame]);
+    blit_anchored(game, x, y, kPuffW, kPuffH, kPuff[game->puff.frame]);
+  }
+  for (int i = 0; i < kTrailN; ++i) {
+    const Puff &puff = game->trail[i];
+    if (!puff.alive || puff.frame >= 5) {
+      continue;
+    }
+    const int tx = static_cast<int>(puff.x >> 16);
+    const int ty = static_cast<int>(puff.y >> 16);
+    blit_anchored(game, tx, ty, kPuffW, kPuffH, kPuff[puff.frame]);
   }
   for (int i = 0; i < kMaxFlash; ++i) {
     const Flash &flash = game->flashes[i];
@@ -603,14 +571,14 @@ void draw_flashes(const Game *game) {
       continue;
     }
     if (flash.kind == FlashKind::Star) {
-      blit_world(game, flash.x - kPigStarW / 2, flash.y - kPigStarH / 2, kPigStarW, kPigStarH, kPigStar);
+      blit_world_sprite(game, flash.x, flash.y, kPigStarW, kPigStarH, kPigStar, 1, 1);
       continue;
     }
     int frame = flash.frame;
     if (frame >= kBlastN) {
       frame = kBlastN - 1;
     }
-    blit_world(game, flash.x - kBlastW / 2, flash.y - kBlastH / 2, kBlastW, kBlastH, kBlast[frame]);
+    blit_world_sprite(game, flash.x, flash.y, kBlastW, kBlastH, kBlast[frame], 1, 1);
   }
 }
 
@@ -624,17 +592,17 @@ void draw_hud(const Game *game) {
   if (game->phase != Phase::Result) {
     return;
   }
+  char line[22];
+  snprintf(line, sizeof(line), "LEVEL %d %s", game->level + 1, game->won ? "COMPLETE" : "FAILED");
+  display.setFont(u8g2_font_5x7_tr);
+  const int textW = display.getStrWidth(line);
+  const int boxW = textW + 8;
+  const int boxX = (kScreenW - boxW) / 2;
   display.setDrawColor(0);
-  display.drawBox(32, 16, 64, 36);
+  display.drawBox(boxX, 22, boxW, 18);
   display.setDrawColor(1);
-  display.drawFrame(32, 16, 64, 36);
-  if (game->won) {
-    blit_screen(58, 20, kCheckW, kCheckH, kCheck);
-  } else {
-    blit_screen(58, 20, kCrossW, kCrossH, kCross);
-  }
-  draw_num(96, 32, game->score);
-  draw_num(96, 42, game->best);
+  display.drawFrame(boxX, 22, boxW, 18);
+  display.drawStr(boxX + 4, 34, line);
 }
 
 bool device_present(uint8_t addr) {
@@ -671,7 +639,6 @@ void draw_game(const Game *game) {
   display.clearBuffer();
   Pose pose;
   game_pose(game, &pose);
-  draw_sky(game);
   draw_ground(game);
   draw_bodies(game);
   draw_sling(game, pose);

@@ -90,9 +90,14 @@ void probe_pin(int pin) {
   Serial.printf("conn GPIO%d plain=%4d pullup=%4d pulldown=%4d %s\n", pin, open, up, down, state);
 }
 
-int read_pot(int32_t *angle) {
+int read_pot(int32_t *angle, int smoothShift) {
+  // Discard one sample after any digital use of ADC1 pins (GPIO1/4 are pads).
+  analogRead(kPotPin);
   const int raw = analogRead(kPotPin);
-  smooth += (raw - smooth) >> 3;
+  if (smoothShift < 1) {
+    smoothShift = 1;
+  }
+  smooth += (raw - smooth) >> smoothShift;
   if (smooth < 0) {
     smooth = 0;
   } else if (smooth > 4095) {
@@ -107,7 +112,19 @@ int read_pot(int32_t *angle) {
     pos = kStart;
   }
   const int deg = kFront + (pos - kStart) * (kTop - kFront) / (4095 - kStart);
-  *angle = static_cast<int32_t>(deg) * kOne / 360;
+  // 5° steps. Stay on the current step until the knob has moved a full step away,
+  // so noise near the forward aim does not flicker the bird.
+  constexpr int kStep = 5;
+  static int heldDeg = -1;
+  if (heldDeg < 0) {
+    heldDeg = deg;
+  } else if (deg - heldDeg >= kStep || heldDeg - deg >= kStep) {
+    heldDeg = kFront + ((deg - kFront + kStep / 2) / kStep) * kStep;
+    if (heldDeg > kTop) {
+      heldDeg = kTop;
+    }
+  }
+  *angle = static_cast<int32_t>(heldDeg) * kOne / 360;
   return raw;
 }
 
@@ -137,6 +154,11 @@ void input_begin() {
 }
 
 void input_poll(PadInput *out, bool aim, uint32_t nowMs) {
+  // Read the pot before digitalReads on GPIO1/4 (also ADC1). Otherwise the SAR
+  // mux can leave the angle stuck while a pad is held.
+  const bool drawingNow = aim && sling == Sling::Draw;
+  out->potRaw = read_pot(&out->angle, drawingNow ? 2 : 3);
+
   bool down[kPadCount];
   bool edge = false;
   bool any = false;
@@ -151,11 +173,11 @@ void input_poll(PadInput *out, bool aim, uint32_t nowMs) {
     prev[i] = down[i];
   }
 
-  out->potRaw = read_pot(&out->angle);
   static uint32_t lastPotLog = 0;
   if (nowMs - lastPotLog >= 200) {
     lastPotLog = nowMs;
-    Serial.printf("pot_raw=%4d\n", out->potRaw);
+    Serial.printf("pot_raw=%4d ang=%ld draw=%d\n", out->potRaw,
+                  static_cast<long>(out->angle * 360 / kOne), drawingNow ? 1 : 0);
   }
   out->power = 0;
   out->drawing = false;
@@ -182,6 +204,9 @@ void input_poll(PadInput *out, bool aim, uint32_t nowMs) {
       sling = Sling::Draw;
       drawStart = nowMs;
       lastPower = power;
+      // First contact frame still counts as drawing so aim+power update together.
+      out->drawing = true;
+      out->power = power;
     }
     return;
   }

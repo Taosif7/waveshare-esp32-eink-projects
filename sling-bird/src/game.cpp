@@ -48,6 +48,7 @@ void load_best(Game *game) {
 void clear_fx(Game *game) {
   memset(game->bits, 0, sizeof(game->bits));
   memset(&game->puff, 0, sizeof(game->puff));
+  memset(game->trail, 0, sizeof(game->trail));
   memset(game->flashes, 0, sizeof(game->flashes));
 }
 
@@ -67,7 +68,7 @@ void add_piece(Game *game, Look look, Mat mat, Shape shape, int x, int y, int hw
   world_add(&game->world, spec);
 }
 
-void load_level(Game *game) {
+void load_level(Game *game, bool intro) {
   world_clear(&game->world, kGroundY);
   clear_fx(game);
   game->bird = -1;
@@ -83,34 +84,41 @@ void load_level(Game *game) {
   game->won = false;
   game->cleared = false;
   game->shakeT = 0;
-  game->camX = kForkX;
-  game->camY = 38;
-  game->camZoom = kOne * 5 / 4;
+  game->intro = intro;
+  game->introStart = 0;
+  camera_init(&game->cam, kScreenW, kScreenH);
+  if (intro) {
+    camera_snap(&game->cam, 108, 40, kCamOne * 3 / 4);
+  } else {
+    camera_snap(&game->cam, kAimCamX, kAimCamY, kCamOne * 5 / 4);
+  }
   game->flightMs = 0;
+  game->pastPeak = false;
   game->checkpoint = game->score;
   const int32_t up = kOne / 4;
   if (game->level <= 0) {
     game->level = 0;
-    add_piece(game, Look::WoodPlank, Mat::Wood, Shape::Box, 104, 50, 8, 3, 1, up);
-    add_piece(game, Look::Pig, Mat::Pig, Shape::Circle, 104, 37, 5, 5, 1, 0);
-    add_piece(game, Look::WoodPlank, Mat::Wood, Shape::Box, 104, 29, 8, 3, 1, 0);
+    // Stack with no initial overlap: plank → pig → plank.
+    add_piece(game, Look::WoodPlank, Mat::Wood, Shape::Box, 140, 55, 10, 3, 1, up);
+    add_piece(game, Look::Pig, Mat::Pig, Shape::Circle, 140, 42, kPigR, kPigR, 1, 0);
+    add_piece(game, Look::WoodPlank, Mat::Wood, Shape::Box, 140, 29, 10, 3, 1, 0);
   } else if (game->level == 1) {
-    add_piece(game, Look::Stone, Mat::Stone, Shape::Box, 112, 54, 5, 4, 3, 0);
-    add_piece(game, Look::WoodPlank, Mat::Wood, Shape::Box, 112, 47, 8, 3, 1, 0);
-    add_piece(game, Look::WoodPlank, Mat::Wood, Shape::Box, 100, 36, 8, 3, 1, up);
-    add_piece(game, Look::WoodPlank, Mat::Wood, Shape::Box, 124, 36, 8, 3, 1, up);
-    add_piece(game, Look::WoodPlank, Mat::Wood, Shape::Box, 112, 25, 8, 3, 1, 0);
-    add_piece(game, Look::Pig, Mat::Pig, Shape::Circle, 112, 39, 5, 5, 1, 0);
-    add_piece(game, Look::Pig, Mat::Pig, Shape::Circle, 156, 53, 5, 5, 1, 0);
-    add_piece(game, Look::WoodCrate, Mat::Wood, Shape::Box, 156, 44, 4, 4, 1, 0);
+    add_piece(game, Look::Stone, Mat::Stone, Shape::Box, 148, 54, 6, 4, 3, 0);
+    add_piece(game, Look::WoodPlank, Mat::Wood, Shape::Box, 148, 47, 10, 3, 1, 0);
+    add_piece(game, Look::WoodPlank, Mat::Wood, Shape::Box, 132, 34, 3, 8, 1, 0);
+    add_piece(game, Look::WoodPlank, Mat::Wood, Shape::Box, 164, 34, 3, 8, 1, 0);
+    add_piece(game, Look::Pig, Mat::Pig, Shape::Circle, 148, 34, kPigR, kPigR, 1, 0);
+    add_piece(game, Look::WoodPlank, Mat::Wood, Shape::Box, 148, 21, 10, 3, 1, 0);
+    add_piece(game, Look::WoodCrate, Mat::Wood, Shape::Box, 192, 54, 5, 4, 1, 0);
+    add_piece(game, Look::Pig, Mat::Pig, Shape::Circle, 192, 40, kPigR, kPigR, 1, 0);
   } else {
     game->level = 2;
-    add_piece(game, Look::Stone, Mat::Stone, Shape::Box, 118, 54, 5, 4, 3, 0);
-    add_piece(game, Look::Stone, Mat::Stone, Shape::Box, 118, 46, 5, 4, 3, 0);
-    add_piece(game, Look::Pig, Mat::Pig, Shape::Circle, 118, 37, 5, 5, 1, 0);
-    add_piece(game, Look::Glass, Mat::Glass, Shape::Box, 118, 29, 7, 3, 1, 0);
-    add_piece(game, Look::WoodPlank, Mat::Wood, Shape::Box, 152, 55, 8, 3, 1, 0);
-    add_piece(game, Look::Pig, Mat::Pig, Shape::Circle, 152, 47, 5, 5, 1, 0);
+    add_piece(game, Look::Stone, Mat::Stone, Shape::Box, 154, 54, 6, 4, 3, 0);
+    add_piece(game, Look::Stone, Mat::Stone, Shape::Box, 154, 46, 6, 4, 3, 0);
+    add_piece(game, Look::Pig, Mat::Pig, Shape::Circle, 154, 32, kPigR, kPigR, 1, 0);
+    add_piece(game, Look::Glass, Mat::Glass, Shape::Box, 154, 19, 8, 3, 1, 0);
+    add_piece(game, Look::WoodPlank, Mat::Wood, Shape::Box, 192, 55, 10, 3, 1, 0);
+    add_piece(game, Look::Pig, Mat::Pig, Shape::Circle, 192, 42, kPigR, kPigR, 1, 0);
   }
 }
 
@@ -361,30 +369,6 @@ int predict_flight_ms(int y0, int32_t vy) {
   return ms;
 }
 
-void ease_to(int *cur, int target, int div) {
-  const int delta = target - *cur;
-  if (delta == 0) {
-    return;
-  }
-  int step = delta / div;
-  if (step == 0) {
-    step = delta > 0 ? 1 : -1;
-  }
-  *cur += step;
-}
-
-void ease_zoom(int32_t *cur, int32_t target, int div) {
-  const int32_t delta = target - *cur;
-  if (delta == 0) {
-    return;
-  }
-  int32_t step = delta / div;
-  if (step == 0) {
-    step = delta > 0 ? 1 : -1;
-  }
-  *cur += step;
-}
-
 void launch(Game *game, uint32_t nowMs) {
   if (game->birdsLeft <= 0) {
     return;
@@ -400,8 +384,8 @@ void launch(Game *game, uint32_t nowMs) {
   spec.look = Look::Bird;
   spec.x = pose.birdX;
   spec.y = pose.birdY;
-  spec.hw = 5;
-  spec.hh = 5;
+  spec.hw = kBirdR;
+  spec.hh = kBirdR;
   spec.hp = 3;
   spec.ang = game->angle;
   spec.asleep = false;
@@ -422,6 +406,7 @@ void launch(Game *game, uint32_t nowMs) {
   game->phase = Phase::Flying;
   game->shotMs = nowMs;
   game->flightMs = static_cast<uint16_t>(predict_flight_ms(pose.birdY, bird.vy));
+  game->pastPeak = false;
   game->settle = 0;
   game->puff.alive = true;
   game->puff.x = bird.x;
@@ -479,8 +464,22 @@ void move_bits(Game *game) {
     if (game->puff.tick >= 2) {
       game->puff.tick = 0;
       game->puff.frame++;
-      if (game->puff.frame >= 4) {
+      if (game->puff.frame >= kPuffN) {
         game->puff.alive = false;
+      }
+    }
+  }
+  for (int i = 0; i < kTrailN; ++i) {
+    Puff &puff = game->trail[i];
+    if (!puff.alive) {
+      continue;
+    }
+    puff.tick++;
+    if (puff.tick >= 2) {
+      puff.tick = 0;
+      puff.frame++;
+      if (puff.frame >= 5) {
+        puff.alive = false;
       }
     }
   }
@@ -506,29 +505,87 @@ void move_bits(Game *game) {
   }
 }
 
+void spawn_trail(Game *game) {
+  if (game->bird < 0 || (game->frame % 6) != 0) {
+    return;
+  }
+  const Body &bird = game->world.bodies[game->bird];
+  if (!bird.alive) {
+    return;
+  }
+  const int32_t speed = fxAbs(bird.vx) + fxAbs(bird.vy);
+  if (speed < 40 * kOne) {
+    return;
+  }
+  Puff *slot = nullptr;
+  for (int i = 0; i < kTrailN; ++i) {
+    if (!game->trail[i].alive) {
+      slot = &game->trail[i];
+      break;
+    }
+  }
+  if (slot == nullptr) {
+    slot = &game->trail[0];
+    for (int i = 1; i < kTrailN; ++i) {
+      if (game->trail[i].frame >= slot->frame) {
+        slot = &game->trail[i];
+      }
+    }
+  }
+  slot->alive = true;
+  slot->x = bird.x - bird.vx / 12;
+  slot->y = bird.y - bird.vy / 12;
+  slot->vx = 0;
+  slot->vy = 0;
+  slot->frame = 0;
+  slot->tick = 0;
+}
+
 void update_camera(Game *game, uint32_t nowMs) {
-  constexpr int32_t kZoomWide = kOne * 5 / 4;
-  constexpr int32_t kZoomTight = kOne * 5 / 2;
-  int targetX = kForkX;
-  int targetY = 38;
+  constexpr int32_t kZoomWide = kCamOne * 5 / 4;
+  constexpr int32_t kZoomTight = kCamOne * 5 / 2;
+  if (game->intro) {
+    if (game->introStart == 0) {
+      game->introStart = nowMs == 0 ? 1 : nowMs;
+    }
+    if (nowMs - game->introStart < 3000) {
+      return;
+    }
+    camera_ease(&game->cam, kAimCamX, kAimCamY, kZoomWide, 18);
+    if (camera_near(&game->cam, kAimCamX, kAimCamY, kZoomWide, 2, 600)) {
+      camera_snap(&game->cam, kAimCamX, kAimCamY, kZoomWide);
+      game->intro = false;
+    }
+    return;
+  }
+  constexpr int32_t kZoomMap = kCamOne * 3 / 4;
+  int targetX = kAimCamX;
+  int targetY = kAimCamY;
   int32_t targetZoom = kZoomWide;
-  bool onArc = false;
+  bool flying = false;
   if (game->phase == Phase::Flying && game->bird >= 0 && game->world.bodies[game->bird].alive) {
     const Body &bird = game->world.bodies[game->bird];
-    const int32_t speed = fxAbs(bird.vx) + fxAbs(bird.vy);
-    const uint32_t elapsed = nowMs - game->shotMs;
-    targetX = static_cast<int>(bird.x >> 16) + static_cast<int>(bird.vx / (kOne * 14));
-    targetY = static_cast<int>(bird.y >> 16) + static_cast<int>(bird.vy / (kOne * 14));
-    if (game->flightMs > 0 && elapsed < game->flightMs && speed > 18 * kOne) {
-      onArc = true;
-      int32_t along = static_cast<int32_t>((static_cast<uint64_t>(elapsed) * kOne) / game->flightMs);
-      if (along < 0) {
-        along = 0;
-      } else if (along > kOne) {
-        along = kOne;
+    flying = true;
+    targetX = static_cast<int>(bird.x >> 16);
+    targetY = static_cast<int>(bird.y >> 16);
+    // Screen Y grows down, so peak is when upward velocity ends (vy turns non-negative).
+    if (bird.vy >= 0) {
+      game->pastPeak = true;
+    }
+    if (game->pastPeak) {
+      // After the apex, open out to the full map so the castle stays in view.
+      targetZoom = kZoomMap;
+      targetX = (targetX + 108) / 2;
+      targetY = (targetY + 40) / 2;
+    } else {
+      int birdY = targetY;
+      if (birdY < 0) {
+        birdY = 0;
+      } else if (birdY > kGroundY) {
+        birdY = kGroundY;
       }
-      const int32_t bell = fxSin(along / 2);
-      targetZoom = kZoomWide + static_cast<int32_t>((static_cast<int64_t>(kZoomTight - kZoomWide) * bell) / kOne);
+      const int32_t lift = static_cast<int32_t>(kGroundY - birdY) * kCamOne / kGroundY;
+      targetZoom = kZoomWide + static_cast<int32_t>((static_cast<int64_t>(kZoomTight - kZoomWide) * lift) / kCamOne);
     }
   } else if (game->phase != Phase::Aim) {
     int n = 0;
@@ -547,8 +604,8 @@ void update_camera(Game *game, uint32_t nowMs) {
       targetX = sumX / n;
       targetY = sumY / n;
     } else {
-      targetX = game->camX;
-      targetY = game->camY;
+      targetX = game->cam.x;
+      targetY = game->cam.y;
     }
   }
   if (targetX < 16) {
@@ -561,10 +618,19 @@ void update_camera(Game *game, uint32_t nowMs) {
   } else if (targetY > kGroundY - 6) {
     targetY = kGroundY - 6;
   }
-  const int div = onArc ? 2 : 4;
-  ease_to(&game->camX, targetX, div);
-  ease_to(&game->camY, targetY, div);
-  ease_zoom(&game->camZoom, targetZoom, onArc ? 2 : 4);
+  if (flying && !game->pastPeak) {
+    // Climbing: keep the bird dead-center; only ease the zoom.
+    game->cam.x = targetX;
+    game->cam.y = targetY;
+    camera_ease(&game->cam, targetX, targetY, targetZoom, 2);
+  } else if (flying) {
+    // Past the peak: ease out to the map view (faster zoom than pan).
+    camera_ease(&game->cam, targetX, targetY, targetZoom, 3);
+  } else {
+    camera_ease(&game->cam, targetX, targetY, targetZoom, 4);
+  }
+  camera_set_shake(&game->cam, game->shakeT > 0 ? ((game->frame & 1) != 0 ? game->shakeMag : -game->shakeMag) : 0,
+                   game->shakeT > 0 ? ((game->frame & 2) != 0 ? 1 : -1) : 0);
 }
 
 void cull_bird(Game *game) {
@@ -587,16 +653,20 @@ void cull_bird(Game *game) {
 }  // namespace
 
 void game_pose(const Game *game, Pose *pose) {
-  int pull = 6;
+  int pull = 28;
   int shy = 0;
   if (game->drawing || game->pullPose) {
-    pull = 6 + static_cast<int>((game->power * 16) >> 16);
+    pull = 28 + static_cast<int>((game->power * 32) >> 16);
     const int pullStep = static_cast<int>((static_cast<int64_t>(game->power) * 4) / kOne);
-    if ((game->drawing || game->pullPose) && game->shake && pullStep >= 4) {
-      shy = ((game->frame / 2) & 1) != 0 ? 2 : -2;
+    if ((game->drawing || game->pullPose) && game->shake && pullStep >= 3) {
+      const int amp = pullStep >= 4 ? 3 : 2;
+      shy = ((game->frame / 2) & 1) != 0 ? amp : -amp;
     }
   }
   local_to_world(kForkX, kForkY, game->angle, -pull, shy, &pose->birdX, &pose->birdY);
+  if (pose->birdY > kGroundY - kBirdR) {
+    pose->birdY = kGroundY - kBirdR;
+  }
   local_to_world(kForkX, kForkY, game->angle, 0, 0, &pose->forkX, &pose->forkY);
   local_to_world(kForkX, kForkY, game->angle, 2, -7, &pose->tipX[0], &pose->tipY[0]);
   local_to_world(kForkX, kForkY, game->angle, 2, 7, &pose->tipX[1], &pose->tipY[1]);
@@ -626,13 +696,14 @@ void game_init(Game *game) {
   game->bird = -1;
   load_best(game);
   input_begin();
-  load_level(game);
+  load_level(game, true);
   Serial.printf("sling-bird best=%d\n", game->best);
 }
 
 void game_step(Game *game, uint32_t nowMs) {
   PadInput input;
-  input_poll(&input, game->phase == Phase::Aim, nowMs);
+  const bool playing = game->phase == Phase::Aim && !game->intro;
+  input_poll(&input, playing, nowMs);
   game->angle = input.angle;
   game->frame++;
   if (game->launchT > 0) {
@@ -645,7 +716,7 @@ void game_step(Game *game, uint32_t nowMs) {
     game->shakeT--;
   }
 
-  if (game->phase == Phase::Aim) {
+  if (playing) {
     game->drawing = input.drawing;
     game->shake = input.shake;
     if (input.drawing || input.launch) {
@@ -660,7 +731,8 @@ void game_step(Game *game, uint32_t nowMs) {
     game->drawing = false;
     game->shake = false;
     if (input.padEdge) {
-      if (!game->won) {
+      const bool retry = !game->won;
+      if (retry) {
         game->score = game->checkpoint;
       } else if (game->cleared) {
         game->score = 0;
@@ -668,7 +740,7 @@ void game_step(Game *game, uint32_t nowMs) {
       } else {
         game->level++;
       }
-      load_level(game);
+      load_level(game, !retry);
     }
   }
 
@@ -685,6 +757,8 @@ void game_step(Game *game, uint32_t nowMs) {
     }
     if (game->settle > 12 || nowMs - game->shotMs > 6000) {
       finish_shot(game);
+    } else if (game->bird >= 0) {
+      spawn_trail(game);
     }
   }
 
