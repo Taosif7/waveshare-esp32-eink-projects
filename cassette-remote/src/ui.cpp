@@ -74,13 +74,14 @@ int clamp_amount(int amount) {
   return amount;
 }
 
-// Default (tape on the left) keeps the left ring the larger one.
+// The left ring stays near radius 16 and the right near 11, so the playing
+// frame matches the close-up even after some tape has moved across.
 int left_ring(int amount) {
-  return 14 + clamp_amount(amount) * 2 / 1000;
+  return clamp_amount(amount) >= 200 ? 16 : 15;
 }
 
 int right_ring(int amount) {
-  return 10 + clamp_amount(amount) * 2 / 1000;
+  return clamp_amount(amount) >= 800 ? 12 : 11;
 }
 
 void line(u8g2_t *u8g2, int x0, int y0, int x1, int y1) {
@@ -113,24 +114,85 @@ void draw_octagon(u8g2_t *u8g2) {
   }
 }
 
-void draw_top_tape(u8g2_t *u8g2) {
-  // Leaves the octagon's top-right corner, runs flat, then steps down onto the circle.
-  line(u8g2, 44, 3, 78, 3);
-  line(u8g2, 78, 3, 88, 7);
+bool lit(u8g2_t *u8g2, int x, int y) {
+  if (x < 0 || y < 0 || x >= 128 || y >= 64) {
+    return false;
+  }
+  const uint8_t *buffer = u8g2_GetBufferPtr(u8g2);
+  return (buffer[(y >> 3) * 128 + x] >> (y & 7)) & 1;
 }
 
-void draw_bottom_path(u8g2_t *u8g2) {
-  // Shallow W: octagon -> node -> head, then head -> node -> circle.
-  line(u8g2, 22, 36, 40, 44);
-  u8g2_DrawBox(u8g2, 39, 43, 3, 3);
-  line(u8g2, 40, 44, 57, 40);
+// Nearest pixel U8g2 actually plotted on this circle, so the tape line ends on the stroke.
+void snap_on_circle(u8g2_t *u8g2, int radius, int targetX, int targetY, int *outX, int *outY) {
+  const int r2 = radius * radius;
+  int best = 1000000;
+  int bx = targetX;
+  int by = targetY;
+  for (int y = kRightCy - radius - 2; y <= kRightCy + radius + 2; ++y) {
+    for (int x = kRightCx - radius - 2; x <= kRightCx + radius + 2; ++x) {
+      if (!lit(u8g2, x, y)) {
+        continue;
+      }
+      const int dx = x - kRightCx;
+      const int dy = y - kRightCy;
+      int radial = dx * dx + dy * dy - r2;
+      if (radial < 0) {
+        radial = -radial;
+      }
+      if (radial > radius * 2) {
+        continue;
+      }
+      const int ddx = x - targetX;
+      const int ddy = y - targetY;
+      const int score = ddx * ddx + ddy * ddy;
+      if (score < best) {
+        best = score;
+        bx = x;
+        by = y;
+      }
+    }
+  }
+  *outX = bx;
+  *outY = by;
+}
 
-  u8g2_DrawHLine(u8g2, 57, 40, 14);
+void draw_node(u8g2_t *u8g2, int x, int y) {
+  u8g2_DrawBox(u8g2, static_cast<u8g2_uint_t>(x - 1), static_cast<u8g2_uint_t>(y - 1), 3, 3);
+}
+
+void draw_tape_lines(u8g2_t *u8g2) {
+  // Circle is already on the buffer. (44, 3) is the octagon's top-right vertex.
+  // (90, 6) is the integer point on x^2+y^2 = 18^2 closest to the upper-left shoulder:
+  // (90-98)^2 + (6-22)^2 = 320, against 324.
+  int topX = 0;
+  int topY = 0;
+  snap_on_circle(u8g2, 18, 90, 6, &topX, &topY);
+  constexpr int kElbowX = 72;
+  line(u8g2, 44, 3, kElbowX, 3);
+  line(u8g2, kElbowX, 3, topX, topY);
+
+  // Lower-left octagon vertex (24, 41), nodes 8px under the head lip at y=40.
+  constexpr int kNodeLx = 40;
+  constexpr int kNodeLy = 48;
+  constexpr int kNodeRx = 88;
+  constexpr int kNodeRy = 48;
+  constexpr int kLipL = 57;
+  constexpr int kLipR = 70;
+  constexpr int kLipY = 40;
+  line(u8g2, 24, 41, kNodeLx, kNodeLy);
+  line(u8g2, kNodeLx, kNodeLy, kLipL, kLipY);
+  u8g2_DrawHLine(u8g2, kLipL, kLipY, kLipR - kLipL + 1);
   u8g2_DrawBox(u8g2, 59, 41, 10, 6);
+  line(u8g2, kLipR, kLipY, kNodeRx, kNodeRy);
 
-  line(u8g2, 71, 40, 88, 44);
-  u8g2_DrawBox(u8g2, 87, 43, 3, 3);
-  line(u8g2, 88, 44, 110, 36);
+  // (107, 38) is a Bresenham pixel on the lower-right. The line from the
+  // right node reaches it without entering the circle.
+  int lowX = 0;
+  int lowY = 0;
+  snap_on_circle(u8g2, 18, 107, 38, &lowX, &lowY);
+  line(u8g2, kNodeRx, kNodeRy, lowX, lowY);
+  draw_node(u8g2, kNodeLx, kNodeLy);
+  draw_node(u8g2, kNodeRx, kNodeRy);
 }
 
 void draw_chevron(u8g2_t *u8g2, int direction) {
@@ -170,14 +232,13 @@ void draw_hub(u8g2_t *u8g2, int cx, int cy) {
 }
 
 void draw_ring(u8g2_t *u8g2, int cx, int cy, int outer, int thick) {
-  const int hole = outer - thick;
-  u8g2_DrawDisc(u8g2, static_cast<u8g2_uint_t>(cx), static_cast<u8g2_uint_t>(cy), static_cast<u8g2_uint_t>(outer),
-                U8G2_DRAW_ALL);
-  if (hole > 1) {
-    u8g2_SetDrawColor(u8g2, 0);
-    u8g2_DrawDisc(u8g2, static_cast<u8g2_uint_t>(cx), static_cast<u8g2_uint_t>(cy), static_cast<u8g2_uint_t>(hole),
-                  U8G2_DRAW_ALL);
-    u8g2_SetDrawColor(u8g2, 1);
+  // Concentric Bresenham circles, so the ring stays round instead of a filled blob.
+  for (int i = 0; i < thick; ++i) {
+    const int radius = outer - i;
+    if (radius > 0) {
+      u8g2_DrawCircle(u8g2, static_cast<u8g2_uint_t>(cx), static_cast<u8g2_uint_t>(cy),
+                      static_cast<u8g2_uint_t>(radius), U8G2_DRAW_ALL);
+    }
   }
 }
 
@@ -186,14 +247,13 @@ void draw_left_reel(u8g2_t *u8g2, int ring, uint16_t angle) {
   draw_ring(u8g2, kLeftCx, kLeftCy, ring, thick);
   // Spokes sit in the hole: clear of the 5px hub and of the ring's inner edge.
   for (int blade = 0; blade < 3; ++blade) {
-    draw_bar_spoke(u8g2, kLeftCx, kLeftCy, 6, 10, static_cast<uint16_t>(angle + blade * 21845));
+    draw_bar_spoke(u8g2, kLeftCx, kLeftCy, 5, 12, static_cast<uint16_t>(angle + blade * 21845));
   }
   draw_hub(u8g2, kLeftCx, kLeftCy);
 }
 
 void draw_right_reel(u8g2_t *u8g2, int ring, uint16_t angle) {
-  u8g2_DrawCircle(u8g2, static_cast<u8g2_uint_t>(kRightCx), static_cast<u8g2_uint_t>(kRightCy), 18, U8G2_DRAW_ALL);
-  draw_ring(u8g2, kRightCx, kRightCy, ring, 2);
+  draw_ring(u8g2, kRightCx, kRightCy, ring, 3);
   for (int blade = 0; blade < 3; ++blade) {
     draw_bar_spoke(u8g2, kRightCx, kRightCy, 5, 7, static_cast<uint16_t>(angle + blade * 21845));
   }
@@ -237,8 +297,9 @@ void draw_segments(u8g2_t *u8g2, int tape) {
   }
 
   const int vx = kX0 + active * (kWidth + kGap) + kWidth / 2;
-  line(u8g2, vx - 3, 52, vx, 55);
-  line(u8g2, vx, 55, vx + 3, 52);
+  // Two clear pixels between the chevron and the segment top at y=56.
+  line(u8g2, vx - 3, 50, vx, 53);
+  line(u8g2, vx, 53, vx + 3, 50);
 }
 
 void draw_glyph(u8g2_t *u8g2, int x, int y, const uint8_t *rows) {
@@ -310,8 +371,7 @@ void ui_render(u8g2_t *u8g2, const UiView *view) {
   draw_volume_slider(u8g2, view->volumePos);
   draw_octagon(u8g2);
   u8g2_DrawCircle(u8g2, static_cast<u8g2_uint_t>(kRightCx), static_cast<u8g2_uint_t>(kRightCy), 18, U8G2_DRAW_ALL);
-  draw_top_tape(u8g2);
-  draw_bottom_path(u8g2);
+  draw_tape_lines(u8g2);
   draw_left_reel(u8g2, left_ring(leftAmount), spin);
   draw_right_reel(u8g2, right_ring(rightAmount), rightSpin);
 
