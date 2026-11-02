@@ -105,12 +105,12 @@ The radio advertises as **Cassette** with the HID service and the Generic Remote
 
 ## Screen
 
-Drawn in code, full-buffer SH1106, one frame about every 33 ms.
+Drawn in code, full-buffer SH1106, one frame about every 33 ms. The shell follows the norns cassette: a spine with end caps on the left, an octagon around the left reel, a rounded housing around the right reel, one tape path along the top and another along the bottom that drops into a head notch with a small v under it, and a segmented bar on the bottom edge.
 
-- While no host is connected, the shell and the reel outlines spin and the caption reads `pairing...`. The Bluetooth mark blinks.
-- Once a host connects, the reels fill with tape. Spokes turn while playing and ease to a stop when paused. Fast forward and rewind ease up to a faster spin and ease back down on release. Next and previous add a short whip.
-- Tape amount is the 90 s local timer, so the left pack shrinks and the right pack grows. Next and previous both restart that timer at the beginning.
-- The bottom bars are the cassette edge. They give way to a volume meter for about 1.5 s after the knob moves.
+- Each reel is an outline circle, a square hub, and three spokes. The spokes are what turn. They spin while playing, ease to a stop when paused, ease up for seek, and whip on next or previous.
+- Tape amount is the 90 s local timer. The circle grows, and once there is enough tape a second circle appears so the ring gets thicker. The left pack shrinks as the right one grows. Next and previous restart the timer at the beginning.
+- While no host is connected the same shell is on screen, the spokes keep turning, the caption reads `pairing...`, and the Bluetooth mark blinks.
+- The segmented bar gives way to a volume meter for about 1.5 s after the knob moves. Play, pause, and seek icons sit in the gap between the reels.
 
 ## Known limits
 

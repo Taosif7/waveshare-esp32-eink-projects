@@ -9,13 +9,19 @@
 
 namespace {
 
-constexpr int kLeftX = 34;
-constexpr int kRightX = 94;
-constexpr int kReelY = 25;
-constexpr int kHubR = 6;
-constexpr int kRMin = 8;
-constexpr int kRMax = 16;
-constexpr int kSpokeHalf = 4200;
+// Fixed shell from the norns cassette: octagon on the left, rounded housing
+// on the right, both bottoms at y=42 so the tape path can join them.
+constexpr int kLeftCx = 34;
+constexpr int kRightCx = 95;
+constexpr int kReelCy = 25;
+constexpr int kRadMin = 10;
+constexpr int kRadMax = 15;
+constexpr int kSpokeTip = 8;
+constexpr int kRightX = 74;
+constexpr int kRightY = 6;
+constexpr int kRightW = 42;
+constexpr int kRightH = 37;
+constexpr int kRightR = 13;
 
 // Quarter sine, Q14. Index 0..64 is 0..90 degrees.
 constexpr int16_t kSinQ[65] = {
@@ -69,28 +75,131 @@ int reel_radius(int amount) {
   if (amount > 1000) {
     amount = 1000;
   }
-  const int r2min = kRMin * kRMin;
-  const int r2max = kRMax * kRMax;
-  const int r2 = r2min + (r2max - r2min) * amount / 1000;
-  int radius = kRMin;
-  while ((radius + 1) * (radius + 1) <= r2 && radius < kRMax) {
-    radius += 1;
-  }
-  return radius;
+  return kRadMin + (kRadMax - kRadMin) * amount / 1000;
 }
 
-void draw_shell(u8g2_t *u8g2, int x, int y, int w, int h, int chamfer) {
-  u8g2_DrawHLine(u8g2, (u8g2_uint_t)(x + chamfer), (u8g2_uint_t)y, (u8g2_uint_t)(w - 2 * chamfer));
-  u8g2_DrawHLine(u8g2, (u8g2_uint_t)(x + chamfer), (u8g2_uint_t)(y + h - 1), (u8g2_uint_t)(w - 2 * chamfer));
-  u8g2_DrawVLine(u8g2, (u8g2_uint_t)x, (u8g2_uint_t)(y + chamfer), (u8g2_uint_t)(h - 2 * chamfer));
-  u8g2_DrawVLine(u8g2, (u8g2_uint_t)(x + w - 1), (u8g2_uint_t)(y + chamfer), (u8g2_uint_t)(h - 2 * chamfer));
-  u8g2_DrawLine(u8g2, (u8g2_uint_t)x, (u8g2_uint_t)(y + chamfer), (u8g2_uint_t)(x + chamfer), (u8g2_uint_t)y);
-  u8g2_DrawLine(u8g2, (u8g2_uint_t)(x + w - 1 - chamfer), (u8g2_uint_t)y, (u8g2_uint_t)(x + w - 1),
-                (u8g2_uint_t)(y + chamfer));
-  u8g2_DrawLine(u8g2, (u8g2_uint_t)x, (u8g2_uint_t)(y + h - 1 - chamfer), (u8g2_uint_t)(x + chamfer),
-                (u8g2_uint_t)(y + h - 1));
-  u8g2_DrawLine(u8g2, (u8g2_uint_t)(x + w - 1 - chamfer), (u8g2_uint_t)(y + h - 1), (u8g2_uint_t)(x + w - 1),
-                (u8g2_uint_t)(y + h - 1 - chamfer));
+void line(u8g2_t *u8g2, int x0, int y0, int x1, int y1) {
+  if (x0 < 0 || y0 < 0 || x1 < 0 || y1 < 0) {
+    return;
+  }
+  u8g2_DrawLine(u8g2, static_cast<u8g2_uint_t>(x0), static_cast<u8g2_uint_t>(y0), static_cast<u8g2_uint_t>(x1),
+                static_cast<u8g2_uint_t>(y1));
+}
+
+// Far-left cassette spine: a vertical bar with caps.
+void draw_spine(u8g2_t *u8g2) {
+  line(u8g2, 1, 8, 8, 8);
+  line(u8g2, 2, 9, 7, 9);
+  line(u8g2, 4, 10, 4, 45);
+  line(u8g2, 5, 10, 5, 45);
+  line(u8g2, 2, 46, 7, 46);
+  line(u8g2, 1, 47, 8, 47);
+}
+
+// Angular housing. The top-right corner is where the roof bridge leaves.
+void draw_left_housing(u8g2_t *u8g2) {
+  line(u8g2, 18, 6, 48, 6);
+  line(u8g2, 48, 6, 56, 14);
+  line(u8g2, 56, 14, 56, 34);
+  line(u8g2, 56, 34, 48, 42);
+  line(u8g2, 48, 42, 18, 42);
+  line(u8g2, 18, 42, 10, 34);
+  line(u8g2, 10, 34, 10, 14);
+  line(u8g2, 10, 14, 18, 6);
+}
+
+void draw_right_housing(u8g2_t *u8g2) {
+  const int x = kRightX;
+  const int y = kRightY;
+  const int w = kRightW;
+  const int h = kRightH;
+  const int r = kRightR;
+  u8g2_DrawHLine(u8g2, static_cast<u8g2_uint_t>(x + r), static_cast<u8g2_uint_t>(y),
+                 static_cast<u8g2_uint_t>(w - 2 * r));
+  u8g2_DrawHLine(u8g2, static_cast<u8g2_uint_t>(x + r), static_cast<u8g2_uint_t>(y + h - 1),
+                 static_cast<u8g2_uint_t>(w - 2 * r));
+  u8g2_DrawVLine(u8g2, static_cast<u8g2_uint_t>(x), static_cast<u8g2_uint_t>(y + r),
+                 static_cast<u8g2_uint_t>(h - 2 * r));
+  u8g2_DrawVLine(u8g2, static_cast<u8g2_uint_t>(x + w - 1), static_cast<u8g2_uint_t>(y + r),
+                 static_cast<u8g2_uint_t>(h - 2 * r));
+  u8g2_DrawCircle(u8g2, static_cast<u8g2_uint_t>(x + r), static_cast<u8g2_uint_t>(y + r), static_cast<u8g2_uint_t>(r),
+                  U8G2_DRAW_UPPER_LEFT);
+  u8g2_DrawCircle(u8g2, static_cast<u8g2_uint_t>(x + w - 1 - r), static_cast<u8g2_uint_t>(y + r),
+                  static_cast<u8g2_uint_t>(r), U8G2_DRAW_UPPER_RIGHT);
+  u8g2_DrawCircle(u8g2, static_cast<u8g2_uint_t>(x + r), static_cast<u8g2_uint_t>(y + h - 1 - r),
+                  static_cast<u8g2_uint_t>(r), U8G2_DRAW_LOWER_LEFT);
+  u8g2_DrawCircle(u8g2, static_cast<u8g2_uint_t>(x + w - 1 - r), static_cast<u8g2_uint_t>(y + h - 1 - r),
+                  static_cast<u8g2_uint_t>(r), U8G2_DRAW_LOWER_RIGHT);
+}
+
+// One path: roof between the housings, then the floor that drops into the head notch.
+void draw_tape_path(u8g2_t *u8g2) {
+  const int roofL = 48;
+  const int roofR = kRightX + kRightR;
+  const int floorY = kRightY + kRightH - 1;
+  line(u8g2, roofL, kRightY, roofR, kRightY);
+  line(u8g2, 48, floorY, 57, floorY);
+  line(u8g2, 57, floorY, 57, floorY + 6);
+  line(u8g2, 57, floorY + 6, 73, floorY + 6);
+  line(u8g2, 73, floorY + 6, 73, floorY);
+  line(u8g2, 73, floorY, roofR, floorY);
+  // Small v under the head.
+  const int vx = 65;
+  const int vy = floorY + 8;
+  line(u8g2, vx - 3, vy, vx, vy + 3);
+  line(u8g2, vx, vy + 3, vx + 3, vy);
+}
+
+void draw_segments(u8g2_t *u8g2) {
+  constexpr int kCount = 7;
+  constexpr int kGap = 3;
+  constexpr int kX0 = 16;
+  constexpr int kX1 = 116;
+  const int width = (kX1 - kX0 - (kCount - 1) * kGap) / kCount;
+  for (int i = 0; i < kCount; ++i) {
+    const int x = kX0 + i * (width + kGap);
+    u8g2_DrawBox(u8g2, static_cast<u8g2_uint_t>(x), 58, static_cast<u8g2_uint_t>(width), 4);
+  }
+}
+
+void draw_thick_spoke(u8g2_t *u8g2, int cx, int cy, uint16_t angle) {
+  int x0 = 0;
+  int y0 = 0;
+  int x1 = 0;
+  int y1 = 0;
+  polar(cx, cy, 1, angle, &x0, &y0);
+  polar(cx, cy, kSpokeTip, angle, &x1, &y1);
+  line(u8g2, x0, y0, x1, y1);
+  int dx = x1 - x0;
+  int dy = y1 - y0;
+  if (dx < 0) {
+    dx = -dx;
+  }
+  if (dy < 0) {
+    dy = -dy;
+  }
+  const int ox = dx >= dy ? 0 : 1;
+  const int oy = dx >= dy ? 1 : 0;
+  line(u8g2, x0 + ox, y0 + oy, x1 + ox, y1 + oy);
+}
+
+void draw_reel(u8g2_t *u8g2, int cx, int cy, int amount, uint16_t angle) {
+  const int outer = reel_radius(amount);
+  u8g2_DrawCircle(u8g2, static_cast<u8g2_uint_t>(cx), static_cast<u8g2_uint_t>(cy), static_cast<u8g2_uint_t>(outer),
+                  U8G2_DRAW_ALL);
+  // A second circle turns the pack into a ring once there is enough tape.
+  if (outer >= kRadMin + 3) {
+    u8g2_DrawCircle(u8g2, static_cast<u8g2_uint_t>(cx), static_cast<u8g2_uint_t>(cy),
+                    static_cast<u8g2_uint_t>(kRadMin), U8G2_DRAW_ALL);
+  }
+  for (int blade = 0; blade < 3; ++blade) {
+    draw_thick_spoke(u8g2, cx, cy, static_cast<uint16_t>(angle + blade * 21845));
+  }
+  // Square hub stays put. Spokes are what turn; the punch keeps them from filling the square.
+  u8g2_SetDrawColor(u8g2, 0);
+  u8g2_DrawBox(u8g2, static_cast<u8g2_uint_t>(cx - 2), static_cast<u8g2_uint_t>(cy - 2), 5, 5);
+  u8g2_SetDrawColor(u8g2, 1);
+  u8g2_DrawFrame(u8g2, static_cast<u8g2_uint_t>(cx - 2), static_cast<u8g2_uint_t>(cy - 2), 5, 5);
 }
 
 void draw_glyph(u8g2_t *u8g2, int x, int y, const uint8_t *rows) {
@@ -170,72 +279,6 @@ void draw_seek(u8g2_t *u8g2, int x, int y, int direction) {
                     (int16_t)y);
 }
 
-void draw_spokes(u8g2_t *u8g2, int cx, int cy, uint16_t angle) {
-  for (int blade = 0; blade < 3; ++blade) {
-    const uint16_t mid = (uint16_t)(angle + blade * 21845);
-    int x1 = 0;
-    int y1 = 0;
-    int x2 = 0;
-    int y2 = 0;
-    polar(cx, cy, kHubR, (uint16_t)(mid - kSpokeHalf), &x1, &y1);
-    polar(cx, cy, kHubR, (uint16_t)(mid + kSpokeHalf), &x2, &y2);
-    u8g2_DrawTriangle(u8g2, (int16_t)cx, (int16_t)cy, (int16_t)x1, (int16_t)y1, (int16_t)x2, (int16_t)y2);
-  }
-  u8g2_SetDrawColor(u8g2, 0);
-  u8g2_DrawDisc(u8g2, (u8g2_uint_t)cx, (u8g2_uint_t)cy, 2, U8G2_DRAW_ALL);
-  u8g2_SetDrawColor(u8g2, 1);
-  u8g2_DrawCircle(u8g2, (u8g2_uint_t)cx, (u8g2_uint_t)cy, 2, U8G2_DRAW_ALL);
-}
-
-void draw_reel_filled(u8g2_t *u8g2, int cx, int cy, int radius, uint16_t angle) {
-  int hole = radius - 3;
-  if (hole < kHubR) {
-    hole = kHubR;
-  }
-  u8g2_SetDrawColor(u8g2, 1);
-  u8g2_DrawDisc(u8g2, (u8g2_uint_t)cx, (u8g2_uint_t)cy, (u8g2_uint_t)radius, U8G2_DRAW_ALL);
-  u8g2_SetDrawColor(u8g2, 0);
-  u8g2_DrawDisc(u8g2, (u8g2_uint_t)cx, (u8g2_uint_t)cy, (u8g2_uint_t)hole, U8G2_DRAW_ALL);
-  u8g2_SetDrawColor(u8g2, 1);
-  u8g2_DrawCircle(u8g2, (u8g2_uint_t)cx, (u8g2_uint_t)cy, (u8g2_uint_t)hole, U8G2_DRAW_ALL);
-  u8g2_DrawCircle(u8g2, (u8g2_uint_t)cx, (u8g2_uint_t)cy, (u8g2_uint_t)kHubR, U8G2_DRAW_ALL);
-  draw_spokes(u8g2, cx, cy, angle);
-}
-
-void draw_reel_outline(u8g2_t *u8g2, int cx, int cy, int radius, uint16_t angle) {
-  u8g2_SetDrawColor(u8g2, 1);
-  u8g2_DrawCircle(u8g2, (u8g2_uint_t)cx, (u8g2_uint_t)cy, (u8g2_uint_t)radius, U8G2_DRAW_ALL);
-  u8g2_DrawCircle(u8g2, (u8g2_uint_t)cx, (u8g2_uint_t)cy, (u8g2_uint_t)(radius - 2), U8G2_DRAW_ALL);
-  u8g2_DrawCircle(u8g2, (u8g2_uint_t)cx, (u8g2_uint_t)cy, (u8g2_uint_t)kHubR, U8G2_DRAW_ALL);
-  draw_spokes(u8g2, cx, cy, angle);
-}
-
-void draw_tape_window(u8g2_t *u8g2, uint16_t angle, bool moving) {
-  // A slot under the packs, with two strands of tape and the head opening.
-  // No drop-lines down from a small reel: those read as poles, not tape.
-  const int y = 43;
-  const int x = 22;
-  const int w = 84;
-  u8g2_DrawFrame(u8g2, (u8g2_uint_t)x, (u8g2_uint_t)y, (u8g2_uint_t)w, 8);
-  u8g2_DrawHLine(u8g2, (u8g2_uint_t)(x + 2), (u8g2_uint_t)(y + 2), (u8g2_uint_t)(w - 4));
-  u8g2_DrawHLine(u8g2, (u8g2_uint_t)(x + 2), (u8g2_uint_t)(y + 5), (u8g2_uint_t)(w - 4));
-  if (moving) {
-    const int gap = static_cast<int>((angle / 1800) % static_cast<unsigned>(w - 10));
-    u8g2_SetDrawColor(u8g2, 0);
-    u8g2_DrawBox(u8g2, (u8g2_uint_t)(x + 2 + gap), (u8g2_uint_t)(y + 2), 2, 4);
-    u8g2_SetDrawColor(u8g2, 1);
-  }
-  u8g2_SetDrawColor(u8g2, 0);
-  u8g2_DrawBox(u8g2, 56, (u8g2_uint_t)(y + 1), 16, 6);
-  u8g2_SetDrawColor(u8g2, 1);
-  u8g2_DrawFrame(u8g2, 56, (u8g2_uint_t)(y + 1), 16, 6);
-}
-
-void draw_bottom_bars(u8g2_t *u8g2) {
-  u8g2_DrawBox(u8g2, 12, 54, 104, 3);
-  u8g2_DrawBox(u8g2, 12, 59, 104, 3);
-}
-
 void draw_volume(u8g2_t *u8g2, int pos, int pop) {
   if (pop < 1) {
     return;
@@ -246,18 +289,20 @@ void draw_volume(u8g2_t *u8g2, int pos, int pop) {
   if (pos > 1000) {
     pos = 1000;
   }
-  const int fullH = 11;
+  const int fullH = 8;
   int h = fullH * pop / 255;
   if (h < 1) {
     h = 1;
   }
-  const int w = 112;
-  const int x = 8;
-  const int y = 62 - h;
+  const int w = 104;
+  const int x = 14;
+  const int y = 63 - h;
   u8g2_SetDrawColor(u8g2, 0);
-  u8g2_DrawBox(u8g2, (u8g2_uint_t)x, (u8g2_uint_t)y, (u8g2_uint_t)w, (u8g2_uint_t)h);
+  u8g2_DrawBox(u8g2, static_cast<u8g2_uint_t>(x), static_cast<u8g2_uint_t>(y), static_cast<u8g2_uint_t>(w),
+               static_cast<u8g2_uint_t>(h));
   u8g2_SetDrawColor(u8g2, 1);
-  u8g2_DrawFrame(u8g2, (u8g2_uint_t)x, (u8g2_uint_t)y, (u8g2_uint_t)w, (u8g2_uint_t)h);
+  u8g2_DrawFrame(u8g2, static_cast<u8g2_uint_t>(x), static_cast<u8g2_uint_t>(y), static_cast<u8g2_uint_t>(w),
+                 static_cast<u8g2_uint_t>(h));
   if (h < 5) {
     return;
   }
@@ -266,26 +311,28 @@ void draw_volume(u8g2_t *u8g2, int pos, int pop) {
   const int fy = y + 2;
   const int fh = h - 4;
   if (fill > 0 && fh > 0) {
-    u8g2_DrawBox(u8g2, (u8g2_uint_t)(x + 2), (u8g2_uint_t)fy, (u8g2_uint_t)fill, (u8g2_uint_t)fh);
+    u8g2_DrawBox(u8g2, static_cast<u8g2_uint_t>(x + 2), static_cast<u8g2_uint_t>(fy), static_cast<u8g2_uint_t>(fill),
+                 static_cast<u8g2_uint_t>(fh));
   }
-  // Segment gaps, so the bar reads as a meter while the edge still tracks the knob.
   u8g2_SetDrawColor(u8g2, 0);
   for (int i = 1; i < 16; ++i) {
     const int tick = x + 2 + i * innerW / 16;
-    u8g2_DrawVLine(u8g2, (u8g2_uint_t)tick, (u8g2_uint_t)fy, (u8g2_uint_t)fh);
+    u8g2_DrawVLine(u8g2, static_cast<u8g2_uint_t>(tick), static_cast<u8g2_uint_t>(fy), static_cast<u8g2_uint_t>(fh));
   }
   u8g2_SetDrawColor(u8g2, 1);
 }
 
 void draw_status(u8g2_t *u8g2, const UiView *view) {
+  const int x = (kLeftCx + kRightCx) / 2 - 5;
+  const int y = 18;
   if (view->seek > 0) {
-    draw_seek(u8g2, 59, 14, 1);
+    draw_seek(u8g2, x, y, 1);
   } else if (view->seek < 0) {
-    draw_seek(u8g2, 59, 14, -1);
+    draw_seek(u8g2, x, y, -1);
   } else if (view->playing) {
-    draw_play(u8g2, 61, 14);
+    draw_play(u8g2, x + 2, y);
   } else {
-    draw_pause(u8g2, 61, 14);
+    draw_pause(u8g2, x + 2, y);
   }
 }
 
@@ -294,38 +341,33 @@ void draw_status(u8g2_t *u8g2, const UiView *view) {
 void ui_render(u8g2_t *u8g2, const UiView *view) {
   u8g2_ClearBuffer(u8g2);
   u8g2_SetDrawColor(u8g2, 1);
-  draw_shell(u8g2, 0, 0, 128, 64, 7);
-  draw_shell(u8g2, 1, 1, 126, 62, 6);
 
   const bool pairing = !view->connected;
-  const uint16_t spin = pairing ? (uint16_t)(view->nowMs * 14) : view->angle;
-  const int leftAmount = pairing ? 650 : (1000 - view->tape);
-  const int rightAmount = pairing ? 350 : view->tape;
-  const int leftR = reel_radius(leftAmount);
-  const int rightR = reel_radius(rightAmount);
-  // Offset so the two hubs don't flash the same pose.
-  const uint16_t rightSpin = (uint16_t)(spin + 14000);
+  const uint16_t spin = pairing ? static_cast<uint16_t>(view->nowMs * 14) : view->angle;
+  const int leftAmount = pairing ? 700 : (1000 - view->tape);
+  const int rightAmount = pairing ? 400 : view->tape;
+  const uint16_t rightSpin = static_cast<uint16_t>(spin + 14000);
+
+  draw_spine(u8g2);
+  draw_left_housing(u8g2);
+  draw_right_housing(u8g2);
+  draw_tape_path(u8g2);
+  draw_reel(u8g2, kLeftCx, kReelCy, leftAmount, spin);
+  draw_reel(u8g2, kRightCx, kReelCy, rightAmount, rightSpin);
 
   if (pairing) {
-    draw_reel_outline(u8g2, kLeftX, kReelY, leftR, spin);
-    draw_reel_outline(u8g2, kRightX, kReelY, rightR, rightSpin);
-    const int dots = (int)((view->nowMs / 350) % 4);
-    draw_pairing(u8g2, 52, dots);
+    const int dots = static_cast<int>((view->nowMs / 350) % 4);
+    draw_pairing(u8g2, 56, dots);
+  } else if (view->volume) {
+    draw_volume(u8g2, view->volumePos, view->volumePop);
+    draw_status(u8g2, view);
   } else {
-    draw_reel_filled(u8g2, kLeftX, kReelY, leftR, spin);
-    draw_reel_filled(u8g2, kRightX, kReelY, rightR, rightSpin);
-    const bool moving = view->playing || view->seek != 0;
-    draw_tape_window(u8g2, spin, moving);
-    if (view->volume) {
-      draw_volume(u8g2, view->volumePos, view->volumePop);
-    } else {
-      draw_bottom_bars(u8g2);
-    }
+    draw_segments(u8g2);
     draw_status(u8g2, view);
   }
 
   const bool blinkOn = ((view->nowMs / 320) % 2) == 0;
   if (view->connected || blinkOn) {
-    draw_bt(u8g2, 116, 4);
+    draw_bt(u8g2, 119, 8);
   }
 }
