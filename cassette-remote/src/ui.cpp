@@ -210,7 +210,7 @@ void draw_pause_mark(u8g2_t *u8g2) {
   u8g2_DrawBox(u8g2, 65, 19, 2, 7);
 }
 
-void draw_bar_spoke(u8g2_t *u8g2, int cx, int cy, int r0, int r1, uint16_t angle) {
+void draw_bar_spoke(u8g2_t *u8g2, int cx, int cy, int r0, int r1, int width, uint16_t angle) {
   int x0 = 0;
   int y0 = 0;
   int x1 = 0;
@@ -219,9 +219,12 @@ void draw_bar_spoke(u8g2_t *u8g2, int cx, int cy, int r0, int r1, uint16_t angle
   polar(cx, cy, r1, angle, &x1, &y1);
   const int dx = x1 - x0;
   const int dy = y1 - y0;
-  const int ox = (dy < 0 ? -dy : dy) >= (dx < 0 ? -dx : dx) ? 1 : 0;
+  const int adx = dx < 0 ? -dx : dx;
+  const int ady = dy < 0 ? -dy : dy;
+  const int ox = ady >= adx ? 1 : 0;
   const int oy = ox == 0 ? 1 : 0;
-  for (int offset = -1; offset <= 1; ++offset) {
+  const int half = width / 2;
+  for (int offset = -half; offset <= width - half - 1; ++offset) {
     line(u8g2, x0 + ox * offset, y0 + oy * offset, x1 + ox * offset, y1 + oy * offset);
   }
 }
@@ -242,21 +245,69 @@ void draw_ring(u8g2_t *u8g2, int cx, int cy, int outer, int thick) {
   }
 }
 
-void draw_left_reel(u8g2_t *u8g2, int ring, uint16_t angle) {
-  const int thick = 3;
-  draw_ring(u8g2, kLeftCx, kLeftCy, ring, thick);
-  // Spokes sit in the hole: clear of the 5px hub and of the ring's inner edge.
-  for (int blade = 0; blade < 3; ++blade) {
-    draw_bar_spoke(u8g2, kLeftCx, kLeftCy, 5, 12, static_cast<uint16_t>(angle + blade * 21845));
+// The 5x5 hub reaches about 3px from the centre on its corners, and a 3px bar
+// adds another pixel beside the centreline. Keep both of those inside the gap.
+void spoke_radii(int ring_outer, int thick, int bar_half, int *r0, int *r1) {
+  const int hub_edge = 3;
+  const int ring_inner = ring_outer - thick + 1;
+  // Extra pixel beyond the 2px gap because the bar is wider than its centreline
+  // and polar rounding can step one pixel inward.
+  const int inner_limit = hub_edge + 3 + bar_half;
+  const int outer_limit = ring_inner - 3 - bar_half;
+  const int span = ring_inner - hub_edge;
+  int length = span / 2;
+  if (length < 1) {
+    length = 1;
   }
+  if (outer_limit > inner_limit && length > outer_limit - inner_limit) {
+    length = outer_limit - inner_limit;
+  }
+  if (outer_limit <= inner_limit) {
+    // The hole is too small for a full gap. Park a stub in the middle.
+    const int mid = (hub_edge + ring_inner) / 2;
+    *r0 = mid;
+    *r1 = mid + 1;
+    return;
+  }
+  const int mid = (inner_limit + outer_limit) / 2;
+  *r0 = mid - length / 2;
+  *r1 = *r0 + length;
+  if (*r0 < inner_limit) {
+    *r1 += inner_limit - *r0;
+    *r0 = inner_limit;
+  }
+  if (*r1 > outer_limit) {
+    *r0 -= *r1 - outer_limit;
+    *r1 = outer_limit;
+  }
+  if (*r0 < inner_limit) {
+    *r0 = inner_limit;
+  }
+  if (*r1 <= *r0) {
+    *r1 = *r0 + 1;
+  }
+}
+
+void draw_spokes(u8g2_t *u8g2, int cx, int cy, int ring, int thick, int width, uint16_t angle) {
+  int r0 = 0;
+  int r1 = 0;
+  spoke_radii(ring, thick, width / 2, &r0, &r1);
+  for (int blade = 0; blade < 3; ++blade) {
+    draw_bar_spoke(u8g2, cx, cy, r0, r1, width, static_cast<uint16_t>(angle + blade * 21845));
+  }
+}
+
+void draw_left_reel(u8g2_t *u8g2, int ring, uint16_t angle) {
+  constexpr int kThick = 3;
+  draw_ring(u8g2, kLeftCx, kLeftCy, ring, kThick);
+  draw_spokes(u8g2, kLeftCx, kLeftCy, ring, kThick, 3, angle);
   draw_hub(u8g2, kLeftCx, kLeftCy);
 }
 
 void draw_right_reel(u8g2_t *u8g2, int ring, uint16_t angle) {
-  draw_ring(u8g2, kRightCx, kRightCy, ring, 3);
-  for (int blade = 0; blade < 3; ++blade) {
-    draw_bar_spoke(u8g2, kRightCx, kRightCy, 5, 7, static_cast<uint16_t>(angle + blade * 21845));
-  }
+  constexpr int kThick = 3;
+  draw_ring(u8g2, kRightCx, kRightCy, ring, kThick);
+  draw_spokes(u8g2, kRightCx, kRightCy, ring, kThick, 2, angle);
   draw_hub(u8g2, kRightCx, kRightCy);
 }
 
