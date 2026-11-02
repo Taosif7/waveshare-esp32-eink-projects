@@ -105,10 +105,10 @@ The radio advertises as **Cassette** with the HID service and the Generic Remote
 
 ## Screen
 
-Drawn in code, full-buffer SH1106, one frame about every 33 ms. The shell follows the norns cassette: a spine with end caps on the left, an octagon around the left reel, a rounded housing around the right reel, one tape path along the top and another along the bottom that drops into a head notch with a small v under it, and a segmented bar on the bottom edge.
+Drawn in code, full-buffer SH1106, one frame about every 33 ms. The shell follows the norns cassette. The right reel and its round housing are smaller and lower than the left octagon, so the top tape line slopes down and meets both outlines. From each housing a diagonal runs down into the head notch, with a small v under the notch. A spine with end caps sits on the left, and a segmented bar runs along the bottom edge.
 
-- Each reel is an outline circle, a square hub, and three spokes. The spokes are what turn. They spin while playing, ease to a stop when paused, ease up for seek, and whip on next or previous.
-- Tape amount is the 90 s local timer. The circle grows, and once there is enough tape a second circle appears so the ring gets thicker. The left pack shrinks as the right one grows. Next and previous restart the timer at the beginning.
+- Each reel is a thin outer circle, a gap, then a thick inner ring. A square hub stays fixed and three spokes turn inside the ring. They spin while playing, ease to a stop when paused, ease up for seek, and whip on next or previous.
+- Tape amount is the 90 s local timer. Both reels change size with it, and the left one stays the larger of the two. The left pack shrinks as the right one grows. Next and previous restart the timer at the beginning.
 - While no host is connected the same shell is on screen, the spokes keep turning, the caption reads `pairing...`, and the Bluetooth mark blinks.
 - The segmented bar gives way to a volume meter for about 1.5 s after the knob moves. Play, pause, and seek icons sit in the gap between the reels.
 

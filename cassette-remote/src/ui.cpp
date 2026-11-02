@@ -9,19 +9,11 @@
 
 namespace {
 
-// Fixed shell from the norns cassette: octagon on the left, rounded housing
-// on the right, both bottoms at y=42 so the tape path can join them.
-constexpr int kLeftCx = 34;
-constexpr int kRightCx = 95;
-constexpr int kReelCy = 25;
-constexpr int kRadMin = 10;
-constexpr int kRadMax = 15;
-constexpr int kSpokeTip = 8;
-constexpr int kRightX = 74;
-constexpr int kRightY = 6;
-constexpr int kRightW = 42;
-constexpr int kRightH = 37;
-constexpr int kRightR = 13;
+// The right reel sits lower and smaller, so the roof line slopes down to it.
+constexpr int kLeftCx = 32;
+constexpr int kLeftCy = 22;
+constexpr int kRightCx = 100;
+constexpr int kRightCy = 33;
 
 // Quarter sine, Q14. Index 0..64 is 0..90 degrees.
 constexpr int16_t kSinQ[65] = {
@@ -68,14 +60,96 @@ void polar(int cx, int cy, int radius, uint16_t angle, int *x, int *y) {
   *y = cy + (radius * isin(angle)) / 16384;
 }
 
-int reel_radius(int amount) {
+int clamp_amount(int amount) {
   if (amount < 0) {
-    amount = 0;
+    return 0;
   }
   if (amount > 1000) {
-    amount = 1000;
+    return 1000;
   }
-  return kRadMin + (kRadMax - kRadMin) * amount / 1000;
+  return amount;
+}
+
+// Left stays larger than the right even when the tape has run all the way across.
+int left_outer(int amount) {
+  return 14 + clamp_amount(amount) * 3 / 1000;
+}
+
+int right_outer(int amount) {
+  return 10 + clamp_amount(amount) * 2 / 1000;
+}
+
+int isqrt(int n) {
+  if (n <= 0) {
+    return 0;
+  }
+  int x = n;
+  int y = (x + 1) / 2;
+  while (y < x) {
+    x = y;
+    y = (x + n / x) / 2;
+  }
+  return x;
+}
+
+// Angle whose cosine is num/den, in the same 65536-per-turn units as isin.
+uint16_t acos_turn(int num, int den) {
+  if (den <= 0 || num >= den) {
+    return 0;
+  }
+  if (num <= -den) {
+    return 32768;
+  }
+  uint16_t lo = 0;
+  uint16_t hi = 32768;
+  while (hi - lo > 1) {
+    const uint16_t mid = static_cast<uint16_t>((lo + hi) / 2);
+    const int64_t cosine = static_cast<int64_t>(isin(static_cast<uint16_t>(mid + 16384))) * den;
+    const int64_t target = static_cast<int64_t>(num) * 16384;
+    if (cosine > target) {
+      lo = mid;
+    } else {
+      hi = mid;
+    }
+  }
+  return lo;
+}
+
+void rotate_vec(int dx, int dy, uint16_t angle, int *ox, int *oy) {
+  const int c = icos(angle);
+  const int s = isin(angle);
+  *ox = static_cast<int>((static_cast<int64_t>(dx) * c - static_cast<int64_t>(dy) * s) / 16384);
+  *oy = static_cast<int>((static_cast<int64_t>(dx) * s + static_cast<int64_t>(dy) * c) / 16384);
+}
+
+// Upper tangent from a point on the left outline to the smaller right circle.
+bool tangent_from_point(int px, int py, int cx, int cy, int radius, int *tx, int *ty) {
+  const int dx = px - cx;
+  const int dy = py - cy;
+  const int dist = isqrt(dx * dx + dy * dy);
+  if (dist <= radius) {
+    return false;
+  }
+  const uint16_t beta = acos_turn(radius, dist);
+  int best = 9999;
+  int bx = cx;
+  int by = cy;
+  for (int side = 0; side < 2; ++side) {
+    const uint16_t angle = side == 0 ? beta : static_cast<uint16_t>(-static_cast<int>(beta));
+    int rx = 0;
+    int ry = 0;
+    rotate_vec(dx, dy, angle, &rx, &ry);
+    const int x = cx + static_cast<int>(static_cast<int64_t>(rx) * radius / dist);
+    const int y = cy + static_cast<int>(static_cast<int64_t>(ry) * radius / dist);
+    if (y < best) {
+      best = y;
+      bx = x;
+      by = y;
+    }
+  }
+  *tx = bx;
+  *ty = by;
+  return true;
 }
 
 void line(u8g2_t *u8g2, int x0, int y0, int x1, int y1) {
@@ -88,66 +162,65 @@ void line(u8g2_t *u8g2, int x0, int y0, int x1, int y1) {
 
 // Far-left cassette spine: a vertical bar with caps.
 void draw_spine(u8g2_t *u8g2) {
-  line(u8g2, 1, 8, 8, 8);
-  line(u8g2, 2, 9, 7, 9);
-  line(u8g2, 4, 10, 4, 45);
-  line(u8g2, 5, 10, 5, 45);
-  line(u8g2, 2, 46, 7, 46);
-  line(u8g2, 1, 47, 8, 47);
+  line(u8g2, 1, 6, 8, 6);
+  line(u8g2, 2, 7, 7, 7);
+  line(u8g2, 4, 8, 4, 44);
+  line(u8g2, 5, 8, 5, 44);
+  line(u8g2, 2, 45, 7, 45);
+  line(u8g2, 1, 46, 8, 46);
 }
 
-// Angular housing. The top-right corner is where the roof bridge leaves.
-void draw_left_housing(u8g2_t *u8g2) {
-  line(u8g2, 18, 6, 48, 6);
-  line(u8g2, 48, 6, 56, 14);
-  line(u8g2, 56, 14, 56, 34);
-  line(u8g2, 56, 34, 48, 42);
-  line(u8g2, 48, 42, 18, 42);
-  line(u8g2, 18, 42, 10, 34);
-  line(u8g2, 10, 34, 10, 14);
-  line(u8g2, 10, 14, 18, 6);
+// Octagon around the left reel, open on the side that faces the tape path.
+void draw_left_housing(u8g2_t *u8g2, int radius, int *joinX, int *joinY, int *lowX, int *lowY) {
+  int vx[8];
+  int vy[8];
+  for (int i = 0; i < 8; ++i) {
+    const uint16_t angle = static_cast<uint16_t>(4096 + i * 8192);
+    polar(kLeftCx, kLeftCy, radius, angle, &vx[i], &vy[i]);
+  }
+  // Vertex 6 sits near the top-right. The sloping tape line leaves from there,
+  // so the upper-right facet is the tape path instead of a flat roof.
+  // Vertex 1 is the lower-right corner the bottom diagonal leaves from.
+  for (int i = 1; i < 6; ++i) {
+    line(u8g2, vx[i], vy[i], vx[i + 1], vy[i + 1]);
+  }
+  *joinX = vx[6];
+  *joinY = vy[6];
+  *lowX = vx[1];
+  *lowY = vy[1];
 }
 
-void draw_right_housing(u8g2_t *u8g2) {
-  const int x = kRightX;
-  const int y = kRightY;
-  const int w = kRightW;
-  const int h = kRightH;
-  const int r = kRightR;
-  u8g2_DrawHLine(u8g2, static_cast<u8g2_uint_t>(x + r), static_cast<u8g2_uint_t>(y),
-                 static_cast<u8g2_uint_t>(w - 2 * r));
-  u8g2_DrawHLine(u8g2, static_cast<u8g2_uint_t>(x + r), static_cast<u8g2_uint_t>(y + h - 1),
-                 static_cast<u8g2_uint_t>(w - 2 * r));
-  u8g2_DrawVLine(u8g2, static_cast<u8g2_uint_t>(x), static_cast<u8g2_uint_t>(y + r),
-                 static_cast<u8g2_uint_t>(h - 2 * r));
-  u8g2_DrawVLine(u8g2, static_cast<u8g2_uint_t>(x + w - 1), static_cast<u8g2_uint_t>(y + r),
-                 static_cast<u8g2_uint_t>(h - 2 * r));
-  u8g2_DrawCircle(u8g2, static_cast<u8g2_uint_t>(x + r), static_cast<u8g2_uint_t>(y + r), static_cast<u8g2_uint_t>(r),
-                  U8G2_DRAW_UPPER_LEFT);
-  u8g2_DrawCircle(u8g2, static_cast<u8g2_uint_t>(x + w - 1 - r), static_cast<u8g2_uint_t>(y + r),
-                  static_cast<u8g2_uint_t>(r), U8G2_DRAW_UPPER_RIGHT);
-  u8g2_DrawCircle(u8g2, static_cast<u8g2_uint_t>(x + r), static_cast<u8g2_uint_t>(y + h - 1 - r),
-                  static_cast<u8g2_uint_t>(r), U8G2_DRAW_LOWER_LEFT);
-  u8g2_DrawCircle(u8g2, static_cast<u8g2_uint_t>(x + w - 1 - r), static_cast<u8g2_uint_t>(y + h - 1 - r),
-                  static_cast<u8g2_uint_t>(r), U8G2_DRAW_LOWER_RIGHT);
-}
+void draw_shell(u8g2_t *u8g2, int leftHousing, int rightHousing) {
+  int joinX = 0;
+  int joinY = 0;
+  int lowX = 0;
+  int lowY = 0;
+  draw_left_housing(u8g2, leftHousing, &joinX, &joinY, &lowX, &lowY);
+  u8g2_DrawCircle(u8g2, static_cast<u8g2_uint_t>(kRightCx), static_cast<u8g2_uint_t>(kRightCy),
+                  static_cast<u8g2_uint_t>(rightHousing), U8G2_DRAW_ALL);
 
-// One path: roof between the housings, then the floor that drops into the head notch.
-void draw_tape_path(u8g2_t *u8g2) {
-  const int roofL = 48;
-  const int roofR = kRightX + kRightR;
-  const int floorY = kRightY + kRightH - 1;
-  line(u8g2, roofL, kRightY, roofR, kRightY);
-  line(u8g2, 48, floorY, 57, floorY);
-  line(u8g2, 57, floorY, 57, floorY + 6);
-  line(u8g2, 57, floorY + 6, 73, floorY + 6);
-  line(u8g2, 73, floorY + 6, 73, floorY);
-  line(u8g2, 73, floorY, roofR, floorY);
-  // Small v under the head.
-  const int vx = 65;
-  const int vy = floorY + 8;
-  line(u8g2, vx - 3, vy, vx, vy + 3);
-  line(u8g2, vx, vy + 3, vx + 3, vy);
+  int touchX = 0;
+  int touchY = 0;
+  if (tangent_from_point(joinX, joinY, kRightCx, kRightCy, rightHousing, &touchX, &touchY)) {
+    line(u8g2, joinX, joinY, touchX, touchY);
+  }
+
+  // Diagonals fall inward to the head notch instead of running flat under the reels.
+  const int notchL = 58;
+  const int notchR = 74;
+  const int notchTop = 46;
+  const int notchBot = 52;
+  int lowRx = 0;
+  int lowRy = 0;
+  polar(kRightCx, kRightCy, rightHousing, 24576, &lowRx, &lowRy);
+  line(u8g2, lowX, lowY, notchL, notchTop);
+  line(u8g2, lowRx, lowRy, notchR, notchTop);
+  line(u8g2, notchL, notchTop, notchL, notchBot);
+  line(u8g2, notchL, notchBot, notchR, notchBot);
+  line(u8g2, notchR, notchBot, notchR, notchTop);
+  const int vx = (notchL + notchR) / 2;
+  line(u8g2, vx - 3, notchBot + 2, vx, notchBot + 5);
+  line(u8g2, vx, notchBot + 5, vx + 3, notchBot + 2);
 }
 
 void draw_segments(u8g2_t *u8g2) {
@@ -162,13 +235,13 @@ void draw_segments(u8g2_t *u8g2) {
   }
 }
 
-void draw_thick_spoke(u8g2_t *u8g2, int cx, int cy, uint16_t angle) {
+void draw_thick_spoke(u8g2_t *u8g2, int cx, int cy, int length, uint16_t angle) {
   int x0 = 0;
   int y0 = 0;
   int x1 = 0;
   int y1 = 0;
   polar(cx, cy, 1, angle, &x0, &y0);
-  polar(cx, cy, kSpokeTip, angle, &x1, &y1);
+  polar(cx, cy, length, angle, &x1, &y1);
   line(u8g2, x0, y0, x1, y1);
   int dx = x1 - x0;
   int dy = y1 - y0;
@@ -183,19 +256,28 @@ void draw_thick_spoke(u8g2_t *u8g2, int cx, int cy, uint16_t angle) {
   line(u8g2, x0 + ox, y0 + oy, x1 + ox, y1 + oy);
 }
 
-void draw_reel(u8g2_t *u8g2, int cx, int cy, int amount, uint16_t angle) {
-  const int outer = reel_radius(amount);
+void draw_reel(u8g2_t *u8g2, int cx, int cy, int outer, uint16_t angle) {
+  // Thin outer circle, a 2px gap, then a 2–3px ring. Spokes stay inside that ring.
+  const int ringOuter = outer - 3;
+  int thick = outer >= 14 ? 3 : 2;
+  int hole = ringOuter - thick;
+  if (hole < 4) {
+    hole = 4;
+  }
   u8g2_DrawCircle(u8g2, static_cast<u8g2_uint_t>(cx), static_cast<u8g2_uint_t>(cy), static_cast<u8g2_uint_t>(outer),
                   U8G2_DRAW_ALL);
-  // A second circle turns the pack into a ring once there is enough tape.
-  if (outer >= kRadMin + 3) {
-    u8g2_DrawCircle(u8g2, static_cast<u8g2_uint_t>(cx), static_cast<u8g2_uint_t>(cy),
-                    static_cast<u8g2_uint_t>(kRadMin), U8G2_DRAW_ALL);
+  if (ringOuter > hole) {
+    u8g2_DrawDisc(u8g2, static_cast<u8g2_uint_t>(cx), static_cast<u8g2_uint_t>(cy), static_cast<u8g2_uint_t>(ringOuter),
+                  U8G2_DRAW_ALL);
+    u8g2_SetDrawColor(u8g2, 0);
+    u8g2_DrawDisc(u8g2, static_cast<u8g2_uint_t>(cx), static_cast<u8g2_uint_t>(cy), static_cast<u8g2_uint_t>(hole),
+                  U8G2_DRAW_ALL);
+    u8g2_SetDrawColor(u8g2, 1);
   }
+  const int spokeLen = hole - 1;
   for (int blade = 0; blade < 3; ++blade) {
-    draw_thick_spoke(u8g2, cx, cy, static_cast<uint16_t>(angle + blade * 21845));
+    draw_thick_spoke(u8g2, cx, cy, spokeLen, static_cast<uint16_t>(angle + blade * 21845));
   }
-  // Square hub stays put. Spokes are what turn; the punch keeps them from filling the square.
   u8g2_SetDrawColor(u8g2, 0);
   u8g2_DrawBox(u8g2, static_cast<u8g2_uint_t>(cx - 2), static_cast<u8g2_uint_t>(cy - 2), 5, 5);
   u8g2_SetDrawColor(u8g2, 1);
@@ -323,8 +405,8 @@ void draw_volume(u8g2_t *u8g2, int pos, int pop) {
 }
 
 void draw_status(u8g2_t *u8g2, const UiView *view) {
-  const int x = (kLeftCx + kRightCx) / 2 - 5;
-  const int y = 18;
+  const int x = (kLeftCx + kRightCx) / 2 - 4;
+  const int y = 34;
   if (view->seek > 0) {
     draw_seek(u8g2, x, y, 1);
   } else if (view->seek < 0) {
@@ -344,16 +426,16 @@ void ui_render(u8g2_t *u8g2, const UiView *view) {
 
   const bool pairing = !view->connected;
   const uint16_t spin = pairing ? static_cast<uint16_t>(view->nowMs * 14) : view->angle;
-  const int leftAmount = pairing ? 700 : (1000 - view->tape);
-  const int rightAmount = pairing ? 400 : view->tape;
+  const int leftAmount = pairing ? 800 : (1000 - view->tape);
+  const int rightAmount = pairing ? 250 : view->tape;
+  const int leftR = left_outer(leftAmount);
+  const int rightR = right_outer(rightAmount);
   const uint16_t rightSpin = static_cast<uint16_t>(spin + 14000);
 
   draw_spine(u8g2);
-  draw_left_housing(u8g2);
-  draw_right_housing(u8g2);
-  draw_tape_path(u8g2);
-  draw_reel(u8g2, kLeftCx, kReelCy, leftAmount, spin);
-  draw_reel(u8g2, kRightCx, kReelCy, rightAmount, rightSpin);
+  draw_shell(u8g2, leftR + 3, rightR + 3);
+  draw_reel(u8g2, kLeftCx, kLeftCy, leftR, spin);
+  draw_reel(u8g2, kRightCx, kRightCy, rightR, rightSpin);
 
   if (pairing) {
     const int dots = static_cast<int>((view->nowMs / 350) % 4);
