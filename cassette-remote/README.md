@@ -109,10 +109,10 @@ Drawn in code, full-buffer SH1106, one frame about every 33 ms. The shell follow
 
 - A 1 px volume slider with end caps sits on the left. A filled thumb rides that line; its height is the knob.
 - The left reel is a thick ring inside a fixed octagon. The right reel is a smaller thick ring inside a larger fixed circle. Both have a hollow square hub with a centre dot, and three thick spokes that turn in the gap and do not touch the hub or the ring.
-- A tape line leaves the octagon's top-right corner, runs across, and steps down onto the right circle. Under the reels the path is a shallow W: diagonal, guide node, up to a filled tape head, then out through the other node to the circle.
+- The top tape line is the outer tangent across the tops of the two thick rings. Each lower run of the W is the outer tangent from a fixed guide node onto that reel's thick ring. The lines cross the octagon and the outer circle. The nodes and the tape head stay put, and the tangent points are recomputed every frame from the current ring radii.
 - A `>` between the reels means play or fast-forward. Rewind mirrors it to `<`. Pause is two short bars.
 - Four segment frames run along the bottom. Passed segments and the playhead carry a small marker. A `v` sits over the active segment.
-- While no host is connected the same shell stays up, the spokes keep turning, the caption reads `pairing...`, and the Bluetooth mark blinks. Tape amount still moves the thick rings only, so the octagon, circle, and tape lines stay put. The left ring stays the larger one at the start of a track.
+- While no host is connected the same shell stays up, the spokes keep turning, the caption reads `pairing...`, and the Bluetooth mark blinks. Tape amount still moves the thick rings only, and the tape lines follow those rings. The left ring stays the larger one at the start of a track.
 
 ## Known limits
 

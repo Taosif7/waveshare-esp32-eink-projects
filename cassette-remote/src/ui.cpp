@@ -122,28 +122,89 @@ bool lit(u8g2_t *u8g2, int x, int y) {
   return (buffer[(y >> 3) * 128 + x] >> (y & 7)) & 1;
 }
 
-// Nearest pixel U8g2 actually plotted on this circle, so the tape line ends on the stroke.
-void snap_on_circle(u8g2_t *u8g2, int radius, int targetX, int targetY, int *outX, int *outY) {
-  const int r2 = radius * radius;
-  int best = 1000000;
-  int bx = targetX;
-  int by = targetY;
-  for (int y = kRightCy - radius - 2; y <= kRightCy + radius + 2; ++y) {
-    for (int x = kRightCx - radius - 2; x <= kRightCx + radius + 2; ++x) {
+int div_round(int64_t num, int64_t den) {
+  if (den < 0) {
+    num = -num;
+    den = -den;
+  }
+  if (num >= 0) {
+    return static_cast<int>((num + den / 2) / den);
+  }
+  return static_cast<int>((num - den / 2) / den);
+}
+
+int isqrt64(int64_t n) {
+  if (n <= 0) {
+    return 0;
+  }
+  int64_t x = n;
+  int64_t y = (x + 1) / 2;
+  while (y < x) {
+    x = y;
+    y = (x + n / x) / 2;
+  }
+  return static_cast<int>(x);
+}
+
+// Tangent from an outside point to the circle. `side` is +1 or -1.
+void touch_from_point(int cx, int cy, int radius, int px, int py, int side, int *tx, int *ty) {
+  const int dx = px - cx;
+  const int dy = py - cy;
+  const int64_t d2 = static_cast<int64_t>(dx) * dx + static_cast<int64_t>(dy) * dy;
+  const int64_t r2 = static_cast<int64_t>(radius) * radius;
+  if (d2 <= r2) {
+    *tx = cx;
+    *ty = cy + radius;
+    return;
+  }
+  const int length = isqrt64(d2 - r2);
+  const int64_t nx = r2 * dx - static_cast<int64_t>(side) * radius * length * dy;
+  const int64_t ny = r2 * dy + static_cast<int64_t>(side) * radius * length * dx;
+  *tx = cx + div_round(nx, d2);
+  *ty = cy + div_round(ny, d2);
+}
+
+// Outer (external) tangent. Radii point the same way, so the tape stays outside both packs.
+void outer_tangent(int x1, int y1, int r1, int x2, int y2, int r2, int side, int *ax, int *ay, int *bx,
+                   int *by) {
+  const int dx = x2 - x1;
+  const int dy = y2 - y1;
+  const int64_t d2 = static_cast<int64_t>(dx) * dx + static_cast<int64_t>(dy) * dy;
+  const int rd = r1 - r2;
+  const int64_t gap = d2 - static_cast<int64_t>(rd) * rd;
+  const int hnum = gap > 0 ? isqrt64(gap) : 0;
+  const int64_t nx = static_cast<int64_t>(rd) * dx - static_cast<int64_t>(side) * hnum * dy;
+  const int64_t ny = static_cast<int64_t>(rd) * dy + static_cast<int64_t>(side) * hnum * dx;
+  *ax = x1 + div_round(static_cast<int64_t>(r1) * nx, d2);
+  *ay = y1 + div_round(static_cast<int64_t>(r1) * ny, d2);
+  *bx = x2 + div_round(static_cast<int64_t>(r2) * nx, d2);
+  *by = y2 + div_round(static_cast<int64_t>(r2) * ny, d2);
+}
+
+// The drawn ring is a Bresenham circle, so land on the pixel of that stroke nearest the ideal point.
+void snap_ring(u8g2_t *u8g2, int cx, int cy, int radius, int tx, int ty, int *ox, int *oy) {
+  const int target = radius * radius;
+  int best = 1000000000;
+  int bx = tx;
+  int by = ty;
+  for (int y = cy - radius - 2; y <= cy + radius + 2; ++y) {
+    for (int x = cx - radius - 2; x <= cx + radius + 2; ++x) {
       if (!lit(u8g2, x, y)) {
         continue;
       }
-      const int dx = x - kRightCx;
-      const int dy = y - kRightCy;
-      int radial = dx * dx + dy * dy - r2;
+      const int dx = x - cx;
+      const int dy = y - cy;
+      int radial = dx * dx + dy * dy - target;
       if (radial < 0) {
         radial = -radial;
       }
-      if (radial > radius * 2) {
+      // Bresenham's outer stroke wanders by about a radius in r^2. The next
+      // circle in, and the decorative shell, sit past that.
+      if (radial > radius) {
         continue;
       }
-      const int ddx = x - targetX;
-      const int ddy = y - targetY;
+      const int ddx = x - tx;
+      const int ddy = y - ty;
       const int score = ddx * ddx + ddy * ddy;
       if (score < best) {
         best = score;
@@ -152,26 +213,41 @@ void snap_on_circle(u8g2_t *u8g2, int radius, int targetX, int targetY, int *out
       }
     }
   }
-  *outX = bx;
-  *outY = by;
+  *ox = bx;
+  *oy = by;
 }
 
 void draw_node(u8g2_t *u8g2, int x, int y) {
   u8g2_DrawBox(u8g2, static_cast<u8g2_uint_t>(x - 1), static_cast<u8g2_uint_t>(y - 1), 3, 3);
 }
 
-void draw_tape_lines(u8g2_t *u8g2) {
-  // Circle is already on the buffer. (44, 3) is the octagon's top-right vertex.
-  // (90, 6) is the integer point on x^2+y^2 = 18^2 closest to the upper-left shoulder:
-  // (90-98)^2 + (6-22)^2 = 320, against 324.
-  int topX = 0;
-  int topY = 0;
-  snap_on_circle(u8g2, 18, 90, 6, &topX, &topY);
-  constexpr int kElbowX = 72;
-  line(u8g2, 44, 3, kElbowX, 3);
-  line(u8g2, kElbowX, 3, topX, topY);
+void draw_tape_lines(u8g2_t *u8g2, int leftR, int rightR) {
+  // Rings are already on the buffer. Tangents use this frame's outer radii.
+  int ax = 0;
+  int ay = 0;
+  int bx = 0;
+  int by = 0;
+  int cx = 0;
+  int cy = 0;
+  int dx = 0;
+  int dy = 0;
+  outer_tangent(kLeftCx, kLeftCy, leftR, kRightCx, kRightCy, rightR, 1, &ax, &ay, &bx, &by);
+  outer_tangent(kLeftCx, kLeftCy, leftR, kRightCx, kRightCy, rightR, -1, &cx, &cy, &dx, &dy);
+  if (cy + dy < ay + by) {
+    ax = cx;
+    ay = cy;
+    bx = dx;
+    by = dy;
+  }
+  int topLx = 0;
+  int topLy = 0;
+  int topRx = 0;
+  int topRy = 0;
+  snap_ring(u8g2, kLeftCx, kLeftCy, leftR, ax, ay, &topLx, &topLy);
+  snap_ring(u8g2, kRightCx, kRightCy, rightR, bx, by, &topRx, &topRy);
+  line(u8g2, topLx, topLy, topRx, topRy);
 
-  // Lower-left octagon vertex (24, 41), nodes 8px under the head lip at y=40.
+  // Guide nodes and the head stay put. Each lower run is the outer tangent down to its node.
   constexpr int kNodeLx = 40;
   constexpr int kNodeLy = 48;
   constexpr int kNodeRx = 88;
@@ -179,18 +255,41 @@ void draw_tape_lines(u8g2_t *u8g2) {
   constexpr int kLipL = 57;
   constexpr int kLipR = 70;
   constexpr int kLipY = 40;
-  line(u8g2, 24, 41, kNodeLx, kNodeLy);
+
+  int l0x = 0;
+  int l0y = 0;
+  int l1x = 0;
+  int l1y = 0;
+  touch_from_point(kLeftCx, kLeftCy, leftR, kNodeLx, kNodeLy, 1, &l0x, &l0y);
+  touch_from_point(kLeftCx, kLeftCy, leftR, kNodeLx, kNodeLy, -1, &l1x, &l1y);
+  if (l1y > l0y) {
+    l0x = l1x;
+    l0y = l1y;
+  }
+  int lowLx = 0;
+  int lowLy = 0;
+  snap_ring(u8g2, kLeftCx, kLeftCy, leftR, l0x, l0y, &lowLx, &lowLy);
+  line(u8g2, lowLx, lowLy, kNodeLx, kNodeLy);
+
   line(u8g2, kNodeLx, kNodeLy, kLipL, kLipY);
   u8g2_DrawHLine(u8g2, kLipL, kLipY, kLipR - kLipL + 1);
   u8g2_DrawBox(u8g2, 59, 41, 10, 6);
   line(u8g2, kLipR, kLipY, kNodeRx, kNodeRy);
 
-  // (107, 38) is a Bresenham pixel on the lower-right. The line from the
-  // right node reaches it without entering the circle.
-  int lowX = 0;
-  int lowY = 0;
-  snap_on_circle(u8g2, 18, 107, 38, &lowX, &lowY);
-  line(u8g2, kNodeRx, kNodeRy, lowX, lowY);
+  int r0x = 0;
+  int r0y = 0;
+  int r1x = 0;
+  int r1y = 0;
+  touch_from_point(kRightCx, kRightCy, rightR, kNodeRx, kNodeRy, 1, &r0x, &r0y);
+  touch_from_point(kRightCx, kRightCy, rightR, kNodeRx, kNodeRy, -1, &r1x, &r1y);
+  if (r1y > r0y) {
+    r0x = r1x;
+    r0y = r1y;
+  }
+  int lowRx = 0;
+  int lowRy = 0;
+  snap_ring(u8g2, kRightCx, kRightCy, rightR, r0x, r0y, &lowRx, &lowRy);
+  line(u8g2, kNodeRx, kNodeRy, lowRx, lowRy);
   draw_node(u8g2, kNodeLx, kNodeLy);
   draw_node(u8g2, kNodeRx, kNodeRy);
 }
@@ -419,12 +518,15 @@ void ui_render(u8g2_t *u8g2, const UiView *view) {
   const int rightAmount = pairing ? 0 : view->tape;
   const uint16_t rightSpin = static_cast<uint16_t>(spin + 14000);
 
+  const int leftR = left_ring(leftAmount);
+  const int rightR = right_ring(rightAmount);
   draw_volume_slider(u8g2, view->volumePos);
   draw_octagon(u8g2);
   u8g2_DrawCircle(u8g2, static_cast<u8g2_uint_t>(kRightCx), static_cast<u8g2_uint_t>(kRightCy), 18, U8G2_DRAW_ALL);
-  draw_tape_lines(u8g2);
-  draw_left_reel(u8g2, left_ring(leftAmount), spin);
-  draw_right_reel(u8g2, right_ring(rightAmount), rightSpin);
+  // Rings first, so the tape can land on the pixels of this frame's thick stroke.
+  draw_left_reel(u8g2, leftR, spin);
+  draw_right_reel(u8g2, rightR, rightSpin);
+  draw_tape_lines(u8g2, leftR, rightR);
 
   if (pairing) {
     const int dots = static_cast<int>((view->nowMs / 350) % 4);

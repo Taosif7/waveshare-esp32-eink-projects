@@ -77,6 +77,18 @@ void ensure_dir(const char *path) {
   mkdir(path, 0755);
 }
 
+// Three pack sizes, including the two steps where a ring grows or shrinks.
+int pack_tape(int frame, int count) {
+  const int slot = count <= 1 ? 0 : frame * 3 / count;
+  if (slot <= 0) {
+    return 400;
+  }
+  if (slot == 1) {
+    return 800;
+  }
+  return 960;
+}
+
 UiView connected_view(uint16_t angle, int tape, bool playing, int8_t seek, bool volume, int volumePos) {
   UiView view{};
   view.connected = true;
@@ -125,7 +137,8 @@ int main() {
   for (int frame = 0; frame < 24; ++frame) {
     char path[64];
     snprintf(path, sizeof(path), "build/spin/%02d.pbm", frame);
-    const UiView view = connected_view(static_cast<uint16_t>(frame * (65536 / 24)), 640, true, 0, false, 880);
+    const UiView view =
+        connected_view(static_cast<uint16_t>(frame * (65536 / 24)), pack_tape(frame, 24), true, 0, false, 880);
     render(path, &view);
   }
 
@@ -144,7 +157,7 @@ int main() {
     view.playing = deck.playing;
     view.seek = deck.seek;
     view.angle = static_cast<uint16_t>(deck.angle);
-    view.tape = deck.tape;
+    view.tape = pack_tape(frame, 28);
     view.nowMs = 3000 + static_cast<uint32_t>(frame) * 33;
     render(path, &view);
     transport_tick(&deck, 33);
