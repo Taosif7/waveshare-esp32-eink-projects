@@ -105,12 +105,14 @@ The radio advertises as **Cassette** with the HID service and the Generic Remote
 
 ## Screen
 
-Drawn in code, full-buffer SH1106, one frame about every 33 ms. The shell follows the norns cassette. The right reel and its round housing are smaller and lower than the left octagon, so the top tape line slopes down and meets both outlines. From each housing a diagonal runs down into the head notch, with a small v under the notch. A spine with end caps sits on the left, and a segmented bar runs along the bottom edge.
+Drawn in code, full-buffer SH1106, one frame about every 33 ms. The shell follows the close-up of the norns cassette.
 
-- Each reel is a thin outer circle, a gap, then a thick inner ring. A square hub stays fixed and three spokes turn inside the ring. They spin while playing, ease to a stop when paused, ease up for seek, and whip on next or previous.
-- Tape amount is the 90 s local timer. Both reels change size with it, and the left one stays the larger of the two. The left pack shrinks as the right one grows. Next and previous restart the timer at the beginning.
-- While no host is connected the same shell is on screen, the spokes keep turning, the caption reads `pairing...`, and the Bluetooth mark blinks.
-- The segmented bar gives way to a volume meter for about 1.5 s after the knob moves. Play, pause, and seek icons sit in the gap between the reels.
+- A 1 px volume slider with end caps sits on the left. A filled thumb rides that line; its height is the knob.
+- The left reel is a thick ring inside a fixed octagon. The right reel is a smaller thick ring inside a larger fixed circle. Both have a hollow square hub with a centre dot, and three thick spokes that turn in the gap and do not touch the hub or the ring.
+- A tape line leaves the octagon's top-right corner, runs across, and steps down onto the right circle. Under the reels the path is a shallow W: diagonal, guide node, up to a filled tape head, then out through the other node to the circle.
+- A `>` between the reels means play or fast-forward. Rewind mirrors it to `<`. Pause is two short bars.
+- Four segment frames run along the bottom. Passed segments and the playhead carry a small marker. A `v` sits over the active segment.
+- While no host is connected the same shell stays up, the spokes keep turning, the caption reads `pairing...`, and the Bluetooth mark blinks. Tape amount still moves the thick rings only, so the octagon, circle, and tape lines stay put. The left ring stays the larger one at the start of a track.
 
 ## Known limits
 

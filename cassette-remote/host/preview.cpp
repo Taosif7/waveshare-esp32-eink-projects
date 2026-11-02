@@ -104,10 +104,10 @@ int main() {
   pairing.nowMs = 1100;
   render("build/pairing.pbm", &pairing);
 
-  const UiView paused = connected_view(8000, 0, false, 0, false, 0);
+  const UiView paused = connected_view(8000, 0, false, 0, false, 880);
   render("build/paused.pbm", &paused);
 
-  const UiView playing = connected_view(20000, 420, true, 0, false, 0);
+  const UiView playing = connected_view(20000, 640, true, 0, false, 880);
   render("build/playing.pbm", &playing);
 
   const UiView late = connected_view(40000, 860, true, 0, false, 0);
@@ -125,7 +125,7 @@ int main() {
   for (int frame = 0; frame < 24; ++frame) {
     char path[64];
     snprintf(path, sizeof(path), "build/spin/%02d.pbm", frame);
-    const UiView view = connected_view(static_cast<uint16_t>(frame * (65536 / 24)), 380, true, 0, false, 0);
+    const UiView view = connected_view(static_cast<uint16_t>(frame * (65536 / 24)), 640, true, 0, false, 880);
     render(path, &view);
   }
 
