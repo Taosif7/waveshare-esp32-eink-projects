@@ -20,3 +20,6 @@ struct UiView {
 };
 
 void ui_render(u8g2_t *u8g2, const UiView *view);
+
+// The parts that never move: outlines, rail, nodes, tape head, segment frames.
+void ui_draw_static(u8g2_t *u8g2);

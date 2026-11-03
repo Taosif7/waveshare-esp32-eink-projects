@@ -108,6 +108,9 @@ UiView connected_view(uint16_t angle, int tape, bool playing, int8_t seek, bool 
 int main() {
   panel_begin();
   ensure_dir("build");
+  u8g2_ClearBuffer(&panel);
+  ui_draw_static(&panel);
+  write_pbm("build/shell.pbm");
   ensure_dir("build/spin");
   ensure_dir("build/whip");
 
@@ -119,7 +122,8 @@ int main() {
   const UiView paused = connected_view(8000, 0, false, 0, false, 880);
   render("build/paused.pbm", &paused);
 
-  const UiView playing = connected_view(20000, 640, true, 0, false, 880);
+  // One spoke straight down, knob at the top of the rail: the pose in the photo.
+  const UiView playing = connected_view(16384, 640, true, 0, false, 1000);
   render("build/playing.pbm", &playing);
 
   const UiView late = connected_view(40000, 860, true, 0, false, 0);

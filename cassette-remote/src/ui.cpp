@@ -1,7 +1,6 @@
 #include "ui.h"
+#include "shell_xbm.h"
 
-// Match U8g2lib.h. The draw functions are compiled with a 16-bit coordinate
-// type; including the C header without this typedefs a different one.
 #ifndef U8G2_16BIT
 #define U8G2_16BIT
 #endif
@@ -9,12 +8,27 @@
 
 namespace {
 
-// Centres from the close-up. Outer octagon and circle stay put; only the
-// thick rings change size with the tape.
-constexpr int kLeftCx = 34;
+// Centres from the photo, in 128x64 pixels. The outlines stay put; the thick
+// rings and the tape that leaves them move with the amount of tape.
+constexpr int kLeftCx = 40;
 constexpr int kLeftCy = 22;
-constexpr int kRightCx = 98;
+constexpr int kRightCx = 96;
 constexpr int kRightCy = 22;
+constexpr int kThick = 3;
+constexpr int kRailX = 8;
+constexpr int kRailTop = 7;
+constexpr int kRailBot = 43;
+constexpr int kNodeLx = 44;
+constexpr int kNodeLy = 45;
+constexpr int kNodeRx = 89;
+constexpr int kNodeRy = 45;
+constexpr int kStepX = 75;
+constexpr int kSegCount = 4;
+constexpr int kSegX = 9;
+constexpr int kSegW = 25;
+constexpr int kSegGap = 3;
+constexpr int kSegY = 55;
+constexpr int kSegH = 5;
 
 constexpr int16_t kSinQ[65] = {
     0,     402,   804,   1205,  1606,  2006,  2404,  2801,  3196,  3590,  3981,
@@ -31,11 +45,6 @@ constexpr uint8_t kGlyphR[7] = {0x00, 0x0E, 0x09, 0x08, 0x08, 0x08, 0x08};
 constexpr uint8_t kGlyphN[7] = {0x00, 0x11, 0x19, 0x15, 0x13, 0x11, 0x11};
 constexpr uint8_t kGlyphG[7] = {0x00, 0x0F, 0x11, 0x11, 0x0F, 0x01, 0x0E};
 constexpr uint8_t kGlyphDot[7] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x0C, 0x0C};
-
-// Fixed shell. Tuned so the thick rings sit inside with a few pixels of gap.
-constexpr int kOct[8][2] = {
-    {26, 3}, {44, 3}, {54, 12}, {54, 32}, {44, 41}, {24, 41}, {14, 32}, {14, 12},
-};
 
 int16_t isin(uint16_t angle) {
   const uint16_t quadrant = angle >> 14;
@@ -74,14 +83,12 @@ int clamp_amount(int amount) {
   return amount;
 }
 
-// The left ring stays near radius 16 and the right near 11, so the playing
-// frame matches the close-up even after some tape has moved across.
 int left_ring(int amount) {
   return clamp_amount(amount) >= 200 ? 16 : 15;
 }
 
 int right_ring(int amount) {
-  return clamp_amount(amount) >= 800 ? 12 : 11;
+  return clamp_amount(amount) >= 500 ? 12 : 11;
 }
 
 void line(u8g2_t *u8g2, int x0, int y0, int x1, int y1) {
@@ -90,36 +97,6 @@ void line(u8g2_t *u8g2, int x0, int y0, int x1, int y1) {
   }
   u8g2_DrawLine(u8g2, static_cast<u8g2_uint_t>(x0), static_cast<u8g2_uint_t>(y0), static_cast<u8g2_uint_t>(x1),
                 static_cast<u8g2_uint_t>(y1));
-}
-
-void draw_volume_slider(u8g2_t *u8g2, int volumePos) {
-  if (volumePos < 0) {
-    volumePos = 0;
-  }
-  if (volumePos > 1000) {
-    volumePos = 1000;
-  }
-  line(u8g2, 4, 6, 4, 50);
-  line(u8g2, 2, 6, 6, 6);
-  line(u8g2, 2, 50, 6, 50);
-  // Full is near the top cap, empty sits just above the bottom cap.
-  const int thumbY = 46 - volumePos * 38 / 1000;
-  u8g2_DrawBox(u8g2, 2, static_cast<u8g2_uint_t>(thumbY), 5, 3);
-}
-
-void draw_octagon(u8g2_t *u8g2) {
-  for (int i = 0; i < 8; ++i) {
-    const int next = (i + 1) % 8;
-    line(u8g2, kOct[i][0], kOct[i][1], kOct[next][0], kOct[next][1]);
-  }
-}
-
-bool lit(u8g2_t *u8g2, int x, int y) {
-  if (x < 0 || y < 0 || x >= 128 || y >= 64) {
-    return false;
-  }
-  const uint8_t *buffer = u8g2_GetBufferPtr(u8g2);
-  return (buffer[(y >> 3) * 128 + x] >> (y & 7)) & 1;
 }
 
 int div_round(int64_t num, int64_t den) {
@@ -146,7 +123,6 @@ int isqrt64(int64_t n) {
   return static_cast<int>(x);
 }
 
-// Tangent from an outside point to the circle. `side` is +1 or -1.
 void touch_from_point(int cx, int cy, int radius, int px, int py, int side, int *tx, int *ty) {
   const int dx = px - cx;
   const int dy = py - cy;
@@ -164,31 +140,21 @@ void touch_from_point(int cx, int cy, int radius, int px, int py, int side, int 
   *ty = cy + div_round(ny, d2);
 }
 
-// Outer (external) tangent. Radii point the same way, so the tape stays outside both packs.
-void outer_tangent(int x1, int y1, int r1, int x2, int y2, int r2, int side, int *ax, int *ay, int *bx,
-                   int *by) {
-  const int dx = x2 - x1;
-  const int dy = y2 - y1;
-  const int64_t d2 = static_cast<int64_t>(dx) * dx + static_cast<int64_t>(dy) * dy;
-  const int rd = r1 - r2;
-  const int64_t gap = d2 - static_cast<int64_t>(rd) * rd;
-  const int hnum = gap > 0 ? isqrt64(gap) : 0;
-  const int64_t nx = static_cast<int64_t>(rd) * dx - static_cast<int64_t>(side) * hnum * dy;
-  const int64_t ny = static_cast<int64_t>(rd) * dy + static_cast<int64_t>(side) * hnum * dx;
-  *ax = x1 + div_round(static_cast<int64_t>(r1) * nx, d2);
-  *ay = y1 + div_round(static_cast<int64_t>(r1) * ny, d2);
-  *bx = x2 + div_round(static_cast<int64_t>(r2) * nx, d2);
-  *by = y2 + div_round(static_cast<int64_t>(r2) * ny, d2);
+bool lit(u8g2_t *u8g2, int x, int y) {
+  if (x < 0 || y < 0 || x >= 128 || y >= 64) {
+    return false;
+  }
+  const uint8_t *buffer = u8g2_GetBufferPtr(u8g2);
+  return (buffer[(y >> 3) * 128 + x] >> (y & 7)) & 1;
 }
 
-// The drawn ring is a Bresenham circle, so land on the pixel of that stroke nearest the ideal point.
-void snap_ring(u8g2_t *u8g2, int cx, int cy, int radius, int tx, int ty, int *ox, int *oy) {
-  const int target = radius * radius;
+void snap_near(u8g2_t *u8g2, int cx, int cy, int radius, int tx, int ty, int *ox, int *oy) {
   int best = 1000000000;
   int bx = tx;
   int by = ty;
-  for (int y = cy - radius - 2; y <= cy + radius + 2; ++y) {
-    for (int x = cx - radius - 2; x <= cx + radius + 2; ++x) {
+  const int target = radius * radius;
+  for (int y = ty - 3; y <= ty + 3; ++y) {
+    for (int x = tx - 3; x <= tx + 3; ++x) {
       if (!lit(u8g2, x, y)) {
         continue;
       }
@@ -198,14 +164,12 @@ void snap_ring(u8g2_t *u8g2, int cx, int cy, int radius, int tx, int ty, int *ox
       if (radial < 0) {
         radial = -radial;
       }
-      // Bresenham's outer stroke wanders by about a radius in r^2. The next
-      // circle in, and the decorative shell, sit past that.
-      if (radial > radius) {
+      if (radial > radius * 3) {
         continue;
       }
       const int ddx = x - tx;
       const int ddy = y - ty;
-      const int score = ddx * ddx + ddy * ddy;
+      const int score = ddx * ddx + ddy * ddy + radial;
       if (score < best) {
         best = score;
         bx = x;
@@ -217,96 +181,113 @@ void snap_ring(u8g2_t *u8g2, int cx, int cy, int radius, int tx, int ty, int *ox
   *oy = by;
 }
 
-void draw_node(u8g2_t *u8g2, int x, int y) {
-  u8g2_DrawBox(u8g2, static_cast<u8g2_uint_t>(x - 1), static_cast<u8g2_uint_t>(y - 1), 3, 3);
+void draw_ngon(u8g2_t *u8g2, int cx, int cy, int radius, int sides, uint16_t rotation) {
+  const uint16_t step = static_cast<uint16_t>(65536 / sides);
+  int x0 = 0;
+  int y0 = 0;
+  int x1 = 0;
+  int y1 = 0;
+  polar(cx, cy, radius, rotation, &x0, &y0);
+  for (int i = 1; i <= sides; ++i) {
+    polar(cx, cy, radius, static_cast<uint16_t>(rotation + step * i), &x1, &y1);
+    line(u8g2, x0, y0, x1, y1);
+    x0 = x1;
+    y0 = y1;
+  }
 }
 
-void draw_tape_lines(u8g2_t *u8g2, int leftR, int rightR) {
-  // Rings are already on the buffer. Tangents use this frame's outer radii.
-  int ax = 0;
-  int ay = 0;
-  int bx = 0;
-  int by = 0;
-  int cx = 0;
-  int cy = 0;
-  int dx = 0;
-  int dy = 0;
-  outer_tangent(kLeftCx, kLeftCy, leftR, kRightCx, kRightCy, rightR, 1, &ax, &ay, &bx, &by);
-  outer_tangent(kLeftCx, kLeftCy, leftR, kRightCx, kRightCy, rightR, -1, &cx, &cy, &dx, &dy);
-  if (cy + dy < ay + by) {
-    ax = cx;
-    ay = cy;
-    bx = dx;
-    by = dy;
+void draw_dashed_circle(u8g2_t *u8g2, int cx, int cy, int radius) {
+  // Short dashes. 192 steps is finer than a pixel, and 3-on 2-off reads as a dotted ring.
+  int prevX = -1;
+  int prevY = -1;
+  int drawn = 0;
+  for (int i = 0; i < 192; ++i) {
+    int x = 0;
+    int y = 0;
+    polar(cx, cy, radius, static_cast<uint16_t>(i * (65536 / 192)), &x, &y);
+    if (x == prevX && y == prevY) {
+      continue;
+    }
+    prevX = x;
+    prevY = y;
+    if ((drawn % 5) < 3) {
+      u8g2_DrawPixel(u8g2, static_cast<u8g2_uint_t>(x), static_cast<u8g2_uint_t>(y));
+    }
+    ++drawn;
   }
-  int topLx = 0;
-  int topLy = 0;
-  int topRx = 0;
-  int topRy = 0;
-  snap_ring(u8g2, kLeftCx, kLeftCy, leftR, ax, ay, &topLx, &topLy);
-  snap_ring(u8g2, kRightCx, kRightCy, rightR, bx, by, &topRx, &topRy);
-  line(u8g2, topLx, topLy, topRx, topRy);
+}
 
-  // Guide nodes and the head stay put. Each lower run is the outer tangent down to its node.
-  constexpr int kNodeLx = 40;
-  constexpr int kNodeLy = 48;
-  constexpr int kNodeRx = 88;
-  constexpr int kNodeRy = 48;
-  constexpr int kLipL = 57;
-  constexpr int kLipR = 70;
-  constexpr int kLipY = 40;
+void draw_node(u8g2_t *u8g2, int x, int y) {
+  // Hollow ring about 3px across.
+  u8g2_DrawPixel(u8g2, static_cast<u8g2_uint_t>(x - 1), static_cast<u8g2_uint_t>(y));
+  u8g2_DrawPixel(u8g2, static_cast<u8g2_uint_t>(x + 1), static_cast<u8g2_uint_t>(y));
+  u8g2_DrawPixel(u8g2, static_cast<u8g2_uint_t>(x), static_cast<u8g2_uint_t>(y - 1));
+  u8g2_DrawPixel(u8g2, static_cast<u8g2_uint_t>(x), static_cast<u8g2_uint_t>(y + 1));
+  u8g2_DrawPixel(u8g2, static_cast<u8g2_uint_t>(x - 1), static_cast<u8g2_uint_t>(y - 1));
+  u8g2_DrawPixel(u8g2, static_cast<u8g2_uint_t>(x + 1), static_cast<u8g2_uint_t>(y - 1));
+  u8g2_DrawPixel(u8g2, static_cast<u8g2_uint_t>(x - 1), static_cast<u8g2_uint_t>(y + 1));
+  u8g2_DrawPixel(u8g2, static_cast<u8g2_uint_t>(x + 1), static_cast<u8g2_uint_t>(y + 1));
+}
 
-  int l0x = 0;
-  int l0y = 0;
-  int l1x = 0;
-  int l1y = 0;
-  touch_from_point(kLeftCx, kLeftCy, leftR, kNodeLx, kNodeLy, 1, &l0x, &l0y);
-  touch_from_point(kLeftCx, kLeftCy, leftR, kNodeLx, kNodeLy, -1, &l1x, &l1y);
-  if (l1y > l0y) {
-    l0x = l1x;
-    l0y = l1y;
-  }
-  int lowLx = 0;
-  int lowLy = 0;
-  snap_ring(u8g2, kLeftCx, kLeftCy, leftR, l0x, l0y, &lowLx, &lowLy);
-  line(u8g2, lowLx, lowLy, kNodeLx, kNodeLy);
+void draw_shell_art(u8g2_t *u8g2) {
+  // Slider rail and the small foot. The knob is drawn later, on top.
+  line(u8g2, kRailX, kRailTop, kRailX, kRailBot);
+  line(u8g2, kRailX - 1, kRailBot + 1, kRailX + 1, kRailBot + 1);
 
-  line(u8g2, kNodeLx, kNodeLy, kLipL, kLipY);
-  u8g2_DrawHLine(u8g2, kLipL, kLipY, kLipR - kLipL + 1);
-  u8g2_DrawBox(u8g2, 59, 41, 10, 6);
-  line(u8g2, kLipR, kLipY, kNodeRx, kNodeRy);
+  // Nearly round 16-gon, a couple of pixels outside the thick ring. A vertex
+  // points left, so the outline starts at x=22.
+  draw_ngon(u8g2, kLeftCx, kLeftCy, 19, 16, 0);
 
-  int r0x = 0;
-  int r0y = 0;
-  int r1x = 0;
-  int r1y = 0;
-  touch_from_point(kRightCx, kRightCy, rightR, kNodeRx, kNodeRy, 1, &r0x, &r0y);
-  touch_from_point(kRightCx, kRightCy, rightR, kNodeRx, kNodeRy, -1, &r1x, &r1y);
-  if (r1y > r0y) {
-    r0x = r1x;
-    r0y = r1y;
-  }
-  int lowRx = 0;
-  int lowRy = 0;
-  snap_ring(u8g2, kRightCx, kRightCy, rightR, r0x, r0y, &lowRx, &lowRy);
-  line(u8g2, kNodeRx, kNodeRy, lowRx, lowRy);
+  // Dotted outer circle around the right reel. The thick ring inside it moves.
+  draw_dashed_circle(u8g2, kRightCx, kRightCy, 19);
+
   draw_node(u8g2, kNodeLx, kNodeLy);
   draw_node(u8g2, kNodeRx, kNodeRy);
-}
 
-void draw_chevron(u8g2_t *u8g2, int direction) {
-  if (direction < 0) {
-    line(u8g2, 66, 19, 63, 22);
-    line(u8g2, 63, 22, 66, 25);
-    return;
+  // Tape head: a thin wider trapezoid roof, then the filled block. The tape
+  // line is drawn later, across the roof.
+  line(u8g2, 56, 39, 80, 39);
+  line(u8g2, 56, 39, 61, 41);
+  line(u8g2, 80, 39, 75, 41);
+  u8g2_DrawBox(u8g2, 61, 41, 15, 5);
+
+  for (int i = 0; i < kSegCount; ++i) {
+    const int x = kSegX + i * (kSegW + kSegGap);
+    u8g2_DrawFrame(u8g2, static_cast<u8g2_uint_t>(x), kSegY, kSegW, kSegH);
   }
-  line(u8g2, 62, 19, 65, 22);
-  line(u8g2, 65, 22, 62, 25);
 }
 
-void draw_pause_mark(u8g2_t *u8g2) {
-  u8g2_DrawBox(u8g2, 61, 19, 2, 7);
-  u8g2_DrawBox(u8g2, 65, 19, 2, 7);
+void draw_knob(u8g2_t *u8g2, int volumePos) {
+  if (volumePos < 0) {
+    volumePos = 0;
+  }
+  if (volumePos > 1000) {
+    volumePos = 1000;
+  }
+  // 5x2 bar. Full sits on the top of the rail.
+  const int travel = kRailBot - kRailTop - 1;
+  const int y = kRailBot - 1 - volumePos * travel / 1000;
+  u8g2_DrawBox(u8g2, static_cast<u8g2_uint_t>(kRailX - 2), static_cast<u8g2_uint_t>(y), 5, 2);
+}
+
+void draw_ring(u8g2_t *u8g2, int cx, int cy, int outer) {
+  for (int i = 0; i < kThick; ++i) {
+    const int radius = outer - i;
+    if (radius > 0) {
+      u8g2_DrawCircle(u8g2, static_cast<u8g2_uint_t>(cx), static_cast<u8g2_uint_t>(cy),
+                      static_cast<u8g2_uint_t>(radius), U8G2_DRAW_ALL);
+    }
+  }
+}
+
+void draw_oct_ring(u8g2_t *u8g2, int cx, int cy, int outer) {
+  // Flat on top, so the pack reads a little square. 4096 is 22.5 degrees.
+  for (int i = 0; i < kThick; ++i) {
+    const int radius = outer - i;
+    if (radius > 1) {
+      draw_ngon(u8g2, cx, cy, radius, 8, 4096);
+    }
+  }
 }
 
 void draw_bar_spoke(u8g2_t *u8g2, int cx, int cy, int r0, int r1, int width, uint16_t angle) {
@@ -328,128 +309,144 @@ void draw_bar_spoke(u8g2_t *u8g2, int cx, int cy, int r0, int r1, int width, uin
   }
 }
 
-void draw_hub(u8g2_t *u8g2, int cx, int cy) {
-  u8g2_DrawFrame(u8g2, static_cast<u8g2_uint_t>(cx - 2), static_cast<u8g2_uint_t>(cy - 2), 5, 5);
-  u8g2_DrawPixel(u8g2, static_cast<u8g2_uint_t>(cx), static_cast<u8g2_uint_t>(cy));
+void spoke_radii(int ring_outer, int length, int *r0, int *r1) {
+  const int ring_inner = ring_outer - kThick + 1;
+  int outer = ring_inner - 1;
+  int inner = outer - length;
+  if (inner < 4) {
+    inner = 4;
+  }
+  if (outer <= inner) {
+    outer = inner + 1;
+  }
+  *r0 = inner;
+  *r1 = outer;
 }
 
-void draw_ring(u8g2_t *u8g2, int cx, int cy, int outer, int thick) {
-  // Concentric Bresenham circles, so the ring stays round instead of a filled blob.
-  for (int i = 0; i < thick; ++i) {
-    const int radius = outer - i;
-    if (radius > 0) {
-      u8g2_DrawCircle(u8g2, static_cast<u8g2_uint_t>(cx), static_cast<u8g2_uint_t>(cy),
-                      static_cast<u8g2_uint_t>(radius), U8G2_DRAW_ALL);
-    }
-  }
-}
-
-// The 5x5 hub reaches about 3px from the centre on its corners, and a 3px bar
-// adds another pixel beside the centreline. Keep both of those inside the gap.
-void spoke_radii(int ring_outer, int thick, int bar_half, int *r0, int *r1) {
-  const int hub_edge = 3;
-  const int ring_inner = ring_outer - thick + 1;
-  // Extra pixel beyond the 2px gap because the bar is wider than its centreline
-  // and polar rounding can step one pixel inward.
-  const int inner_limit = hub_edge + 3 + bar_half;
-  const int outer_limit = ring_inner - 3 - bar_half;
-  const int span = ring_inner - hub_edge;
-  int length = span / 2;
-  if (length < 1) {
-    length = 1;
-  }
-  if (outer_limit > inner_limit && length > outer_limit - inner_limit) {
-    length = outer_limit - inner_limit;
-  }
-  if (outer_limit <= inner_limit) {
-    // The hole is too small for a full gap. Park a stub in the middle.
-    const int mid = (hub_edge + ring_inner) / 2;
-    *r0 = mid;
-    *r1 = mid + 1;
-    return;
-  }
-  const int mid = (inner_limit + outer_limit) / 2;
-  *r0 = mid - length / 2;
-  *r1 = *r0 + length;
-  if (*r0 < inner_limit) {
-    *r1 += inner_limit - *r0;
-    *r0 = inner_limit;
-  }
-  if (*r1 > outer_limit) {
-    *r0 -= *r1 - outer_limit;
-    *r1 = outer_limit;
-  }
-  if (*r0 < inner_limit) {
-    *r0 = inner_limit;
-  }
-  if (*r1 <= *r0) {
-    *r1 = *r0 + 1;
-  }
-}
-
-void draw_spokes(u8g2_t *u8g2, int cx, int cy, int ring, int thick, int width, uint16_t angle) {
+void draw_spokes(u8g2_t *u8g2, int cx, int cy, int ring, int length, int width, uint16_t angle) {
   int r0 = 0;
   int r1 = 0;
-  spoke_radii(ring, thick, width / 2, &r0, &r1);
+  spoke_radii(ring, length, &r0, &r1);
   for (int blade = 0; blade < 3; ++blade) {
     draw_bar_spoke(u8g2, cx, cy, r0, r1, width, static_cast<uint16_t>(angle + blade * 21845));
   }
 }
 
-void draw_left_reel(u8g2_t *u8g2, int ring, uint16_t angle) {
-  constexpr int kThick = 3;
-  draw_ring(u8g2, kLeftCx, kLeftCy, ring, kThick);
-  draw_spokes(u8g2, kLeftCx, kLeftCy, ring, kThick, 3, angle);
-  draw_hub(u8g2, kLeftCx, kLeftCy);
+void draw_hub(u8g2_t *u8g2, int cx, int cy) {
+  u8g2_DrawFrame(u8g2, static_cast<u8g2_uint_t>(cx - 2), static_cast<u8g2_uint_t>(cy - 2), 5, 5);
+  u8g2_DrawPixel(u8g2, static_cast<u8g2_uint_t>(cx), static_cast<u8g2_uint_t>(cy));
 }
 
-void draw_right_reel(u8g2_t *u8g2, int ring, uint16_t angle) {
-  constexpr int kThick = 3;
-  draw_ring(u8g2, kRightCx, kRightCy, ring, kThick);
-  draw_spokes(u8g2, kRightCx, kRightCy, ring, kThick, 2, angle);
-  draw_hub(u8g2, kRightCx, kRightCy);
+void draw_tape(u8g2_t *u8g2, int leftR, int rightR) {
+  const int leftTop = kLeftCy - leftR;
+  // Horizontal run, then a step at x=75 down onto the right pack.
+  line(u8g2, kLeftCx, leftTop, kStepX, leftTop);
+  int landX = 0;
+  int landY = 0;
+  int otherX = 0;
+  int otherY = 0;
+  touch_from_point(kRightCx, kRightCy, rightR, kStepX, leftTop, 1, &landX, &landY);
+  touch_from_point(kRightCx, kRightCy, rightR, kStepX, leftTop, -1, &otherX, &otherY);
+  if (otherY < landY) {
+    landX = otherX;
+    landY = otherY;
+  }
+  int snapX = 0;
+  int snapY = 0;
+  snap_near(u8g2, kRightCx, kRightCy, rightR, landX, landY, &snapX, &snapY);
+  line(u8g2, kStepX, leftTop, snapX, snapY);
+
+  // Left tape leaves the pack at 8 o'clock and stays outside it on the way to the node.
+  int leftX = 0;
+  int leftY = 0;
+  polar(kLeftCx, kLeftCy, leftR, 27306, &leftX, &leftY);
+  int leftSnapX = 0;
+  int leftSnapY = 0;
+  snap_near(u8g2, kLeftCx, kLeftCy, leftR, leftX, leftY, &leftSnapX, &leftSnapY);
+  const int bendX = leftSnapX + 3;
+  const int bendY = leftSnapY + 6;
+  line(u8g2, leftSnapX, leftSnapY, bendX, bendY);
+  line(u8g2, bendX, bendY, kNodeLx, kNodeLy);
+
+  line(u8g2, kNodeLx, kNodeLy, 56, 39);
+  line(u8g2, 56, 39, 80, 39);
+  line(u8g2, 80, 39, kNodeRx, kNodeRy);
+
+  int rightX = 0;
+  int rightY = 0;
+  int right2X = 0;
+  int right2Y = 0;
+  touch_from_point(kRightCx, kRightCy, rightR, kNodeRx, kNodeRy, 1, &rightX, &rightY);
+  touch_from_point(kRightCx, kRightCy, rightR, kNodeRx, kNodeRy, -1, &right2X, &right2Y);
+  if (right2X > rightX) {
+    rightX = right2X;
+    rightY = right2Y;
+  }
+  int lowX = 0;
+  int lowY = 0;
+  snap_near(u8g2, kRightCx, kRightCy, rightR, rightX, rightY, &lowX, &lowY);
+  line(u8g2, kNodeRx, kNodeRy, lowX, lowY);
+
+  draw_node(u8g2, kNodeLx, kNodeLy);
+  draw_node(u8g2, kNodeRx, kNodeRy);
+}
+
+void draw_chevron(u8g2_t *u8g2, int direction) {
+  if (direction < 0) {
+    line(u8g2, 72, 19, 69, 22);
+    line(u8g2, 69, 22, 72, 25);
+    return;
+  }
+  line(u8g2, 66, 19, 69, 22);
+  line(u8g2, 69, 22, 66, 25);
+}
+
+void draw_pause_mark(u8g2_t *u8g2) {
+  u8g2_DrawBox(u8g2, 66, 19, 2, 7);
+  u8g2_DrawBox(u8g2, 70, 19, 2, 7);
+}
+
+void draw_playhead(u8g2_t *u8g2, int cx) {
+  // 7px wide, two-pixel strokes, point one pixel above the segment.
+  line(u8g2, cx - 3, 50, cx, 53);
+  line(u8g2, cx + 3, 50, cx, 53);
+  line(u8g2, cx - 3, 49, cx, 52);
+  line(u8g2, cx + 3, 49, cx, 52);
 }
 
 void draw_segments(u8g2_t *u8g2, int tape) {
-  constexpr int kCount = 4;
-  constexpr int kWidth = 28;
-  constexpr int kGap = 4;
-  constexpr int kX0 = 2;
-  constexpr int kY = 56;
   if (tape < 0) {
     tape = 0;
   }
   if (tape > 1000) {
     tape = 1000;
   }
-  const int span = 1000 / kCount;
+  const int span = 1000 / kSegCount;
   int active = tape / span;
-  if (active > kCount - 1) {
-    active = kCount - 1;
+  if (active > kSegCount - 1) {
+    active = kSegCount - 1;
   }
   const int into = tape - active * span;
 
-  for (int i = 0; i < kCount; ++i) {
-    const int x = kX0 + i * (kWidth + kGap);
-    u8g2_DrawFrame(u8g2, static_cast<u8g2_uint_t>(x), kY, kWidth, 5);
-    if (i > active) {
-      continue;
-    }
-    int mark = kWidth - 8;
+  for (int i = 0; i <= active; ++i) {
+    const int x = kSegX + i * (kSegW + kSegGap);
+    u8g2_DrawBox(u8g2, static_cast<u8g2_uint_t>(x + 1), static_cast<u8g2_uint_t>(kSegY + 1),
+                 static_cast<u8g2_uint_t>(kSegW - 2), static_cast<u8g2_uint_t>(kSegH - 2));
+    int window = 6;
     if (i == active) {
-      mark = 2 + into * (kWidth - 8) / span;
-    } else if (i == 0) {
-      mark = 8;
+      window = 2 + into * (kSegW - 10) / span;
     } else if (i == 1) {
-      mark = 16;
+      window = 12;
+    } else if (i == 2) {
+      window = 16;
     }
-    u8g2_DrawBox(u8g2, static_cast<u8g2_uint_t>(x + mark), kY + 1, 3, 3);
+    u8g2_SetDrawColor(u8g2, 0);
+    u8g2_DrawBox(u8g2, static_cast<u8g2_uint_t>(x + window), static_cast<u8g2_uint_t>(kSegY + 2), 4, 2);
+    u8g2_SetDrawColor(u8g2, 1);
   }
 
-  const int vx = kX0 + active * (kWidth + kGap) + kWidth / 2;
-  // Two clear pixels between the chevron and the segment top at y=56.
-  line(u8g2, vx - 3, 50, vx, 53);
-  line(u8g2, vx, 53, vx + 3, 50);
+  const int vx = kSegX + active * (kSegW + kSegGap) + kSegW / 2;
+  draw_playhead(u8g2, vx);
 }
 
 void draw_glyph(u8g2_t *u8g2, int x, int y, const uint8_t *rows) {
@@ -508,25 +505,33 @@ void draw_bt(u8g2_t *u8g2, int x, int y) {
 
 }  // namespace
 
+void ui_draw_static(u8g2_t *u8g2) {
+  draw_shell_art(u8g2);
+}
+
 void ui_render(u8g2_t *u8g2, const UiView *view) {
   u8g2_ClearBuffer(u8g2);
   u8g2_SetDrawColor(u8g2, 1);
+  // Baked from ui_draw_static. Regenerate src/shell_xbm.h from build/shell.pbm after changing it.
+  u8g2_DrawXBMP(u8g2, 0, 0, kShellWidth, kShellHeight, kShellBits);
 
   const bool pairing = !view->connected;
   const uint16_t spin = pairing ? static_cast<uint16_t>(view->nowMs * 14) : view->angle;
   const int leftAmount = pairing ? 1000 : (1000 - view->tape);
   const int rightAmount = pairing ? 0 : view->tape;
+  // Keeps the right pack's spokes off the left pack's phase.
   const uint16_t rightSpin = static_cast<uint16_t>(spin + 14000);
-
   const int leftR = left_ring(leftAmount);
   const int rightR = right_ring(rightAmount);
-  draw_volume_slider(u8g2, view->volumePos);
-  draw_octagon(u8g2);
-  u8g2_DrawCircle(u8g2, static_cast<u8g2_uint_t>(kRightCx), static_cast<u8g2_uint_t>(kRightCy), 18, U8G2_DRAW_ALL);
-  // Rings first, so the tape can land on the pixels of this frame's thick stroke.
-  draw_left_reel(u8g2, leftR, spin);
-  draw_right_reel(u8g2, rightR, rightSpin);
-  draw_tape_lines(u8g2, leftR, rightR);
+
+  draw_ring(u8g2, kLeftCx, kLeftCy, leftR);
+  draw_oct_ring(u8g2, kRightCx, kRightCy, rightR);
+  draw_spokes(u8g2, kLeftCx, kLeftCy, leftR, 10, 3, spin);
+  draw_spokes(u8g2, kRightCx, kRightCy, rightR, 7, 2, rightSpin);
+  draw_hub(u8g2, kLeftCx, kLeftCy);
+  draw_hub(u8g2, kRightCx, kRightCy);
+  draw_tape(u8g2, leftR, rightR);
+  draw_knob(u8g2, view->volumePos);
 
   if (pairing) {
     const int dots = static_cast<int>((view->nowMs / 350) % 4);
@@ -542,8 +547,8 @@ void ui_render(u8g2_t *u8g2, const UiView *view) {
     }
   }
 
-  const bool blinkOn = ((view->nowMs / 320) % 2) == 0;
-  if (view->connected || blinkOn) {
+  // The mark is only for pairing. A connected playing screen has no icon.
+  if (!view->connected && ((view->nowMs / 320) % 2) == 0) {
     draw_bt(u8g2, 119, 0);
   }
 }

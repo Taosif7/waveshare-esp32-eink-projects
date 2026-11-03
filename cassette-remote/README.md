@@ -107,11 +107,11 @@ The radio advertises as **Cassette** with the HID service and the Generic Remote
 
 Drawn in code, full-buffer SH1106, one frame about every 33 ms. The shell follows the close-up of the norns cassette.
 
-- A 1 px volume slider with end caps sits on the left. A filled thumb rides that line; its height is the knob.
-- The left reel is a thick ring inside a fixed octagon. The right reel is a smaller thick ring inside a larger fixed circle. Both have a hollow square hub with a centre dot, and three thick spokes that turn in the gap and do not touch the hub or the ring.
-- The top tape line is the outer tangent across the tops of the two thick rings. Each lower run of the W is the outer tangent from a fixed guide node onto that reel's thick ring. The lines cross the octagon and the outer circle. The nodes and the tape head stay put, and the tangent points are recomputed every frame from the current ring radii.
+- A 1 px volume rail sits on the left, with a small foot and a wide flat knob.
+- The shell that never moves is one bitmap: a 16-sided outline around the left reel, a dashed circle around the right, hollow guide nodes, the tape head and its roof, the slider rail and foot, and the four segment frames.
+- The left pack is a round thick ring. The right pack is a slightly square thick ring. Both have a hollow square hub and three long spokes. The top tape run steps down near the middle onto the right pack. The left tape leaves that pack on its left side and runs down to the guide node.
 - A `>` between the reels means play or fast-forward. Rewind mirrors it to `<`. Pause is two short bars.
-- Four segment frames run along the bottom. Passed segments and the playhead carry a small marker. A `v` sits over the active segment.
+- Four segment frames run along the bottom. Played segments are filled, with a small hollow window in the fill. A bold `v` sits over the active segment. The Bluetooth mark is only shown while pairing.
 - While no host is connected the same shell stays up, the spokes keep turning, the caption reads `pairing...`, and the Bluetooth mark blinks. Tape amount still moves the thick rings only, and the tape lines follow those rings. The left ring stays the larger one at the start of a track.
 
 ## Known limits

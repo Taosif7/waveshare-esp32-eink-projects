@@ -9,6 +9,7 @@ CFLAGS = -std=c11 -O2 -I$(U8)/clib
 U8_SRC = \
 	$(U8)/clib/u8g2_buffer.c \
 	$(U8)/clib/u8g2_box.c \
+	$(U8)/clib/u8g2_bitmap.c \
 	$(U8)/clib/u8g2_font.c \
 	$(U8)/clib/u8g2_kerning.c \
 	$(U8)/clib/u8x8_8x8.c \

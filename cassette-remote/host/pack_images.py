@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Turn host preview PBMs into 4x PNGs and looping GIFs."""
 
+import subprocess
+import sys
 from pathlib import Path
 
 from PIL import Image, ImageOps
@@ -50,6 +52,7 @@ def main() -> None:
     write_gif(BUILD / "spin", ASSETS / "reels-spin.gif", 42)
     write_gif(BUILD / "whip", ASSETS / "track-whip.gif", 33)
     print("wrote reels-spin.gif and track-whip.gif")
+    subprocess.check_call([sys.executable, str(ROOT / "overlay_diff.py")])
 
 
 if __name__ == "__main__":
