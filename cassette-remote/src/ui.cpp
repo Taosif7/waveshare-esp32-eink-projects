@@ -1,6 +1,8 @@
 #include "ui.h"
 #include "shell_xbm.h"
 
+#include <cmath>
+
 #ifndef U8G2_16BIT
 #define U8G2_16BIT
 #endif
@@ -28,7 +30,7 @@ constexpr int kSegX = 9;
 constexpr int kSegW = 25;
 constexpr int kSegGap = 3;
 constexpr int kSegY = 55;
-constexpr int kSegH = 5;
+constexpr int kSegH = 6;
 
 constexpr int16_t kSinQ[65] = {
     0,     402,   804,   1205,  1606,  2006,  2404,  2801,  3196,  3590,  3981,
@@ -244,12 +246,12 @@ void draw_shell_art(u8g2_t *u8g2) {
   draw_node(u8g2, kNodeLx, kNodeLy);
   draw_node(u8g2, kNodeRx, kNodeRy);
 
-  // Tape head: a thin wider trapezoid roof, then the filled block. The tape
-  // line is drawn later, across the roof.
-  line(u8g2, 56, 39, 80, 39);
-  line(u8g2, 56, 39, 61, 41);
-  line(u8g2, 80, 39, 75, 41);
-  u8g2_DrawBox(u8g2, 61, 41, 15, 5);
+  // Filled head, with a 1px trapezoid roof that meets the block so the
+  // roof does not enclose a hole. The tape line runs along the roof.
+  u8g2_DrawBox(u8g2, 62, 41, 12, 4);
+  line(u8g2, 56, 40, 80, 40);
+  line(u8g2, 56, 40, 62, 41);
+  line(u8g2, 80, 40, 74, 41);
 
   for (int i = 0; i < kSegCount; ++i) {
     const int x = kSegX + i * (kSegW + kSegGap);
@@ -271,26 +273,47 @@ void draw_knob(u8g2_t *u8g2, int volumePos) {
 }
 
 void draw_ring(u8g2_t *u8g2, int cx, int cy, int outer) {
-  for (int i = 0; i < kThick; ++i) {
-    const int radius = outer - i;
-    if (radius > 0) {
-      u8g2_DrawCircle(u8g2, static_cast<u8g2_uint_t>(cx), static_cast<u8g2_uint_t>(cy),
-                      static_cast<u8g2_uint_t>(radius), U8G2_DRAW_ALL);
+  // Solid 3px band. Concentric Bresenham circles leave holes, which reads as a thin ring.
+  const int inner = outer - kThick + 1;
+  const int outer2 = outer * outer + outer;
+  const int inner2 = inner * inner - inner;
+  for (int y = cy - outer - 1; y <= cy + outer + 1; ++y) {
+    for (int x = cx - outer - 1; x <= cx + outer + 1; ++x) {
+      const int dx = x - cx;
+      const int dy = y - cy;
+      const int d2 = dx * dx + dy * dy;
+      if (d2 <= outer2 && d2 >= inner2) {
+        u8g2_DrawPixel(u8g2, static_cast<u8g2_uint_t>(x), static_cast<u8g2_uint_t>(y));
+      }
     }
   }
 }
 
-void draw_oct_ring(u8g2_t *u8g2, int cx, int cy, int outer) {
-  // Flat on top, so the pack reads a little square. 4096 is 22.5 degrees.
-  for (int i = 0; i < kThick; ++i) {
-    const int radius = outer - i;
-    if (radius > 1) {
-      draw_ngon(u8g2, cx, cy, radius, 8, 4096);
+void draw_soft_square_ring(u8g2_t *u8g2, int cx, int cy, int outer) {
+  // Superellipse, only a little squarer than a circle. n=2 is round, n=2.4 flattens the sides.
+  constexpr float kPower = 2.15f;
+  const int inner = outer - kThick + 1;
+  for (int y = cy - outer - 1; y <= cy + outer + 1; ++y) {
+    for (int x = cx - outer - 1; x <= cx + outer + 1; ++x) {
+      const float ax = std::fabs(static_cast<float>(x - cx));
+      const float ay = std::fabs(static_cast<float>(y - cy));
+      const float scale = std::pow(std::pow(ax, kPower) + std::pow(ay, kPower), 1.f / kPower);
+      if (scale <= static_cast<float>(outer) + 0.45f && scale >= static_cast<float>(inner) - 0.45f) {
+        u8g2_DrawPixel(u8g2, static_cast<u8g2_uint_t>(x), static_cast<u8g2_uint_t>(y));
+      }
     }
   }
 }
 
-void draw_bar_spoke(u8g2_t *u8g2, int cx, int cy, int r0, int r1, int width, uint16_t angle) {
+int hub_gap(int x, int y, int cx, int cy) {
+  const int ax = x >= cx ? x - cx : cx - x;
+  const int ay = y >= cy ? y - cy : cy - y;
+  const int dx = ax > 2 ? ax - 2 : 0;
+  const int dy = ay > 2 ? ay - 2 : 0;
+  return dx > dy ? dx : dy;
+}
+
+void draw_bar_spoke(u8g2_t *u8g2, int cx, int cy, int r0, int r1, int ring_outer, int width, uint16_t angle) {
   int x0 = 0;
   int y0 = 0;
   int x1 = 0;
@@ -304,23 +327,50 @@ void draw_bar_spoke(u8g2_t *u8g2, int cx, int cy, int r0, int r1, int width, uin
   const int ox = ady >= adx ? 1 : 0;
   const int oy = ox == 0 ? 1 : 0;
   const int half = width / 2;
+  const int ring_inner = ring_outer - kThick + 1;
+  // One pixel inside the inner stroke. Combined with the bar width this stays
+  // off the ring, and the requested length still fits the smaller reel.
+  const int ring_limit = ring_inner - 1;
+  const int ring_limit2 = ring_limit * ring_limit;
   for (int offset = -half; offset <= width - half - 1; ++offset) {
-    line(u8g2, x0 + ox * offset, y0 + oy * offset, x1 + ox * offset, y1 + oy * offset);
+    int xa = x0 + ox * offset;
+    int ya = y0 + oy * offset;
+    int xb = x1 + ox * offset;
+    int yb = y1 + oy * offset;
+    const int steps_x = xb >= xa ? xb - xa : xa - xb;
+    const int steps_y = yb >= ya ? yb - ya : ya - yb;
+    int steps = steps_x > steps_y ? steps_x : steps_y;
+    if (steps < 1) {
+      steps = 1;
+    }
+    for (int s = 0; s <= steps; ++s) {
+      const int x = xa + (xb - xa) * s / steps;
+      const int y = ya + (yb - ya) * s / steps;
+      // Two clear pixels outside the hub square.
+      if (hub_gap(x, y, cx, cy) < 3) {
+        continue;
+      }
+      const int rdx = x - cx;
+      const int rdy = y - cy;
+      if (rdx * rdx + rdy * rdy >= ring_limit2) {
+        continue;
+      }
+      if (x >= 0 && y >= 0) {
+        u8g2_DrawPixel(u8g2, static_cast<u8g2_uint_t>(x), static_cast<u8g2_uint_t>(y));
+      }
+    }
   }
 }
 
 void spoke_radii(int ring_outer, int length, int *r0, int *r1) {
-  const int ring_inner = ring_outer - kThick + 1;
-  int outer = ring_inner - 1;
-  int inner = outer - length;
-  if (inner < 4) {
-    inner = 4;
+  // The bar is drawn at this length. Pixels that would land within 2px of the
+  // hub or the inner edge of the ring are dropped, so the bar stays floating.
+  (void)ring_outer;
+  *r0 = 5;
+  *r1 = 5 + length - 1;
+  if (*r1 < *r0) {
+    *r1 = *r0;
   }
-  if (outer <= inner) {
-    outer = inner + 1;
-  }
-  *r0 = inner;
-  *r1 = outer;
 }
 
 void draw_spokes(u8g2_t *u8g2, int cx, int cy, int ring, int length, int width, uint16_t angle) {
@@ -328,7 +378,7 @@ void draw_spokes(u8g2_t *u8g2, int cx, int cy, int ring, int length, int width, 
   int r1 = 0;
   spoke_radii(ring, length, &r0, &r1);
   for (int blade = 0; blade < 3; ++blade) {
-    draw_bar_spoke(u8g2, cx, cy, r0, r1, width, static_cast<uint16_t>(angle + blade * 21845));
+    draw_bar_spoke(u8g2, cx, cy, r0, r1, ring, width, static_cast<uint16_t>(angle + blade * 21845));
   }
 }
 
@@ -368,9 +418,9 @@ void draw_tape(u8g2_t *u8g2, int leftR, int rightR) {
   line(u8g2, leftSnapX, leftSnapY, bendX, bendY);
   line(u8g2, bendX, bendY, kNodeLx, kNodeLy);
 
-  line(u8g2, kNodeLx, kNodeLy, 56, 39);
-  line(u8g2, 56, 39, 80, 39);
-  line(u8g2, 80, 39, kNodeRx, kNodeRy);
+  line(u8g2, kNodeLx, kNodeLy, 56, 40);
+  line(u8g2, 56, 40, 80, 40);
+  line(u8g2, 80, 40, kNodeRx, kNodeRy);
 
   int rightX = 0;
   int rightY = 0;
@@ -432,13 +482,10 @@ void draw_segments(u8g2_t *u8g2, int tape) {
     const int x = kSegX + i * (kSegW + kSegGap);
     u8g2_DrawBox(u8g2, static_cast<u8g2_uint_t>(x + 1), static_cast<u8g2_uint_t>(kSegY + 1),
                  static_cast<u8g2_uint_t>(kSegW - 2), static_cast<u8g2_uint_t>(kSegH - 2));
-    int window = 6;
+    // 4x2 hole centred in the fill, with white pixels on every side of it.
+    int window = (kSegW - 4) / 2;
     if (i == active) {
-      window = 2 + into * (kSegW - 10) / span;
-    } else if (i == 1) {
-      window = 12;
-    } else if (i == 2) {
-      window = 16;
+      window = 3 + into * (kSegW - 10) / span;
     }
     u8g2_SetDrawColor(u8g2, 0);
     u8g2_DrawBox(u8g2, static_cast<u8g2_uint_t>(x + window), static_cast<u8g2_uint_t>(kSegY + 2), 4, 2);
@@ -525,9 +572,9 @@ void ui_render(u8g2_t *u8g2, const UiView *view) {
   const int rightR = right_ring(rightAmount);
 
   draw_ring(u8g2, kLeftCx, kLeftCy, leftR);
-  draw_oct_ring(u8g2, kRightCx, kRightCy, rightR);
-  draw_spokes(u8g2, kLeftCx, kLeftCy, leftR, 10, 3, spin);
-  draw_spokes(u8g2, kRightCx, kRightCy, rightR, 7, 2, rightSpin);
+  draw_soft_square_ring(u8g2, kRightCx, kRightCy, rightR);
+  draw_spokes(u8g2, kLeftCx, kLeftCy, leftR, 8, 3, spin);
+  draw_spokes(u8g2, kRightCx, kRightCy, rightR, 6, 3, rightSpin);
   draw_hub(u8g2, kLeftCx, kLeftCy);
   draw_hub(u8g2, kRightCx, kRightCy);
   draw_tape(u8g2, leftR, rightR);
