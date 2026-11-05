@@ -24,6 +24,7 @@ Projects for the [Waveshare ESP32-C6-ePaper-1.54](https://www.waveshare.com/esp3
 | [`touch-pot-test`](touch-pot-test/) | **Touch + pot test** — five touch pads and a potentiometer live on the SH1106 (ESP32-C3 Super Mini) |
 | [`cocktail-lab`](cocktail-lab/) | **Cocktail lab** — match layered drinks; flavor pads + flow-rate tap on the SH1106 (ESP32-C3 Super Mini) |
 | [`sling-bird`](sling-bird/) | **Sling bird** — pot aims, a right-to-left swipe on five touch pads fires; SH1106 on the ESP32-C3 Super Mini |
+| [`cassette-remote`](cassette-remote/) | **Cassette** — BLE HID media remote with a spinning cassette on the SH1106; ESP32-C3 Super Mini, five touch pads, volume knob |
 
 ## Hardware
 

@@ -94,6 +94,29 @@
       }
     },
     {
+      "label": "flash: cassette-remote",
+      "type": "process",
+      "command": "${env:HOME}/.platformio/penv/bin/pio",
+      "args": [
+        "run",
+        "-t",
+        "upload"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}/cassette-remote"
+      },
+      "group": "build",
+      "problemMatcher": [],
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": true,
+        "panel": "shared",
+        "showReuseMessage": false,
+        "clear": true
+      }
+    },
+    {
       "label": "flash: claude-desk",
       "type": "process",
       "command": "${env:HOME}/.platformio/penv/bin/pio",
