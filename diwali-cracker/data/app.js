@@ -5,6 +5,9 @@
   const bgCanvas = document.getElementById("bg");
   const fxCanvas = document.getElementById("fx");
   const arm = document.getElementById("arm");
+  const startEl = document.getElementById("start");
+  const startBtn = document.getElementById("start-btn");
+  const amoledToggle = document.getElementById("amoled");
   const bg = bgCanvas.getContext("2d", { alpha: false });
   const fx = fxCanvas.getContext("2d", { alpha: true });
 
@@ -15,12 +18,18 @@
   let audioCtx = null;
   let masterGain = null;
   let armed = false;
+  let started = false;
   let noiseCache = null;
+  let amoledMode = localStorage.getItem("diwali_amoled") !== "0";
+  if (amoledToggle) amoledToggle.checked = amoledMode;
+  document.body.classList.toggle("mode-amoled", amoledMode);
+  document.body.classList.toggle("mode-normal", !amoledMode);
 
   const rockets = [];
   const sparks = [];
   const delayed = [];
   const cores = [];
+  const skyline = [];
   let flash = 0;
   let flashX = 0;
   let flashY = 0;
@@ -99,15 +108,22 @@
   }
 
   function paintBackground() {
+    buildSkyline();
+    if (amoledMode) {
+      // Pure black = AMOLED pixels off until rockets/bursts light the scene.
+      bg.fillStyle = "#000000";
+      bg.fillRect(0, 0, W, H);
+      return;
+    }
+
+    // Normal mode: always-visible dark sky + skyline.
     const g = bg.createLinearGradient(0, 0, 0, H);
     g.addColorStop(0, "#000000");
-    g.addColorStop(0.45, "#030208");
-    g.addColorStop(0.78, "#0a0610");
+    g.addColorStop(0.5, "#05020a");
     g.addColorStop(1, "#120810");
     bg.fillStyle = g;
     bg.fillRect(0, 0, W, H);
 
-    // Sparse warm stars (not a blue BlastSky wash)
     let seed = 42;
     const rnd = () => {
       seed = (seed * 16807) % 2147483647;
@@ -115,91 +131,183 @@
     };
     const n = Math.floor((W * H) / 9000);
     for (let i = 0; i < n; i++) {
-      bg.globalAlpha = 0.12 + 0.55 * rnd();
+      bg.globalAlpha = 0.12 + 0.5 * rnd();
       bg.fillStyle = rnd() > 0.7 ? "#ffd7a0" : "#ffe8c8";
       const sz = 0.5 + rnd() * 1.1;
       bg.fillRect(rnd() * W, rnd() * H * 0.72, sz, sz);
     }
     bg.globalAlpha = 1;
 
-    // Varied skyline: blocks, towers, spikes, domes — darker than sky
-    seed = 2026;
+    bg.fillStyle = "#08040c";
+    bg.strokeStyle = "#0c0812";
+    for (const b of skyline) b.draw(bg);
+
+    bg.fillStyle = "rgba(255,140,60,0.22)";
+    for (const b of skyline) {
+      if (b.windows) {
+        for (let i = 0; i < b.windows.length; i += 2) {
+          bg.fillRect(b.windows[i], b.windows[i + 1], 2, 2);
+        }
+      }
+      if (b.bands) {
+        for (const yy of b.bands.ys) {
+          bg.fillStyle = "rgba(255,120,40,0.16)";
+          bg.fillRect(b.bands.x, yy, b.bands.w, 2);
+        }
+        bg.fillStyle = "rgba(255,140,60,0.22)";
+      }
+    }
+    bg.fillStyle = "#020106";
+    bg.fillRect(0, H - H * 0.025, W, H * 0.025);
+  }
+
+  function setAmoledMode(on) {
+    amoledMode = !!on;
+    localStorage.setItem("diwali_amoled", amoledMode ? "1" : "0");
+    document.body.classList.toggle("mode-amoled", amoledMode);
+    document.body.classList.toggle("mode-normal", !amoledMode);
+    paintBackground();
+    // Clear lingering FX so mode switch doesn't leave ghosts.
+    fx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    fx.globalCompositeOperation = "source-over";
+    fx.clearRect(0, 0, W, H);
+  }
+
+  function buildSkyline() {
+    skyline.length = 0;
+    let seed = 2026;
+    const rnd = () => {
+      seed = (seed * 16807) % 2147483647;
+      return (seed - 1) / 2147483646;
+    };
     let x = -20;
-    const ink = "#050208";
-    const ink2 = "#08040c";
     while (x < W + 40) {
       const kind = rnd();
       const gap = 2 + rnd() * 8;
       if (kind < 0.38) {
-        // Short wide block
         const ww = 36 + rnd() * 70;
-        const hh = H * (0.04 + 0.07 * rnd());
-        bg.fillStyle = ink;
-        bg.fillRect(x, H - hh, ww, hh);
-        // Dim warm windows
+        const hh = H * (0.05 + 0.08 * rnd());
+        const bx = x;
+        const windows = [];
         for (let yy = H - hh + 6; yy < H - 4; yy += 9) {
-          for (let xx = x + 5; xx < x + ww - 5; xx += 8) {
-            if (rnd() < 0.12) {
-              bg.fillStyle = `rgba(255,140,60,${0.1 + 0.25 * rnd()})`;
-              bg.fillRect(xx, yy, 2, 2);
-            }
+          for (let xx = bx + 5; xx < bx + ww - 5; xx += 8) {
+            if (rnd() < 0.14) windows.push(xx, yy);
           }
         }
+        skyline.push({
+          draw(ctx) {
+            ctx.fillRect(bx, H - hh, ww, hh);
+          },
+          windows,
+        });
         x += ww + gap;
       } else if (kind < 0.62) {
-        // Tall tower
         const ww = 18 + rnd() * 28;
-        const hh = H * (0.14 + 0.22 * rnd());
-        bg.fillStyle = ink2;
-        bg.fillRect(x, H - hh, ww, hh);
-        // Antenna
-        bg.strokeStyle = "#0c0812";
-        bg.lineWidth = 1.5;
-        bg.beginPath();
-        bg.moveTo(x + ww * 0.5, H - hh);
-        bg.lineTo(x + ww * 0.5, H - hh - 8 - rnd() * 18);
-        bg.stroke();
+        const hh = H * (0.16 + 0.24 * rnd());
+        const bx = x;
+        const ant = 8 + rnd() * 18;
+        const bands = [];
         for (let yy = H - hh + 8; yy < H - 6; yy += 11) {
-          if (rnd() < 0.35) {
-            bg.fillStyle = `rgba(255,120,40,${0.08 + 0.2 * rnd()})`;
-            bg.fillRect(x + 3, yy, ww - 6, 2);
-          }
+          if (rnd() < 0.4) bands.push(yy);
         }
+        skyline.push({
+          draw(ctx) {
+            ctx.fillRect(bx, H - hh, ww, hh);
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(bx + ww * 0.5, H - hh);
+            ctx.lineTo(bx + ww * 0.5, H - hh - ant);
+            ctx.stroke();
+          },
+          bands: { x: bx + 3, w: ww - 6, ys: bands },
+        });
         x += ww + gap;
       } else if (kind < 0.82) {
-        // Spiky / triangular roof cluster
         const base = 22 + rnd() * 40;
-        const hh = H * (0.08 + 0.12 * rnd());
-        bg.fillStyle = ink;
-        bg.beginPath();
-        bg.moveTo(x, H);
-        bg.lineTo(x, H - hh * 0.55);
-        bg.lineTo(x + base * 0.22, H - hh);
-        bg.lineTo(x + base * 0.45, H - hh * 0.5);
-        bg.lineTo(x + base * 0.62, H - hh * 1.05);
-        bg.lineTo(x + base * 0.8, H - hh * 0.45);
-        bg.lineTo(x + base, H - hh * 0.7);
-        bg.lineTo(x + base, H);
-        bg.closePath();
-        bg.fill();
+        const hh = H * (0.09 + 0.13 * rnd());
+        const bx = x;
+        skyline.push({
+          draw(ctx) {
+            ctx.beginPath();
+            ctx.moveTo(bx, H);
+            ctx.lineTo(bx, H - hh * 0.55);
+            ctx.lineTo(bx + base * 0.22, H - hh);
+            ctx.lineTo(bx + base * 0.45, H - hh * 0.5);
+            ctx.lineTo(bx + base * 0.62, H - hh * 1.05);
+            ctx.lineTo(bx + base * 0.8, H - hh * 0.45);
+            ctx.lineTo(bx + base, H - hh * 0.7);
+            ctx.lineTo(bx + base, H);
+            ctx.closePath();
+            ctx.fill();
+          },
+        });
         x += base + gap;
       } else {
-        // Dome / temple-ish bump
         const ww = 30 + rnd() * 50;
-        const hh = H * (0.06 + 0.1 * rnd());
-        bg.fillStyle = ink2;
-        bg.fillRect(x, H - hh * 0.45, ww, hh * 0.45);
-        bg.beginPath();
-        bg.ellipse(x + ww * 0.5, H - hh * 0.45, ww * 0.42, hh * 0.55, 0, Math.PI, 0);
-        bg.fill();
-        // Finial
-        bg.fillRect(x + ww * 0.5 - 1, H - hh - 6, 2, 8);
+        const hh = H * (0.07 + 0.11 * rnd());
+        const bx = x;
+        skyline.push({
+          draw(ctx) {
+            ctx.fillRect(bx, H - hh * 0.45, ww, hh * 0.45);
+            ctx.beginPath();
+            ctx.ellipse(bx + ww * 0.5, H - hh * 0.45, ww * 0.42, hh * 0.55, 0, Math.PI, 0);
+            ctx.fill();
+            ctx.fillRect(bx + ww * 0.5 - 1, H - hh - 6, 2, 8);
+          },
+        });
         x += ww + gap;
       }
     }
-    // Foreground darker strip
-    bg.fillStyle = "#020106";
-    bg.fillRect(0, H - H * 0.025, W, H * 0.025);
+  }
+
+  function drawLitSkyline() {
+    // Only silhouette that fireworks / rockets can light — otherwise fully off.
+    const lights = [];
+    if (flash > 0.03) lights.push({ x: flashX, y: flashY, p: flash, hue: flashHue });
+    for (const r of rockets) {
+      lights.push({ x: r.x, y: r.y, p: 0.35, hue: 14 });
+    }
+    // Nearby bright sparks also wash the horizon a little
+    let sparkWash = 0;
+    for (let i = 0; i < sparks.length; i += 12) {
+      const s = sparks[i];
+      if (s.y > H * 0.55) sparkWash = Math.min(0.25, sparkWash + 0.008);
+    }
+    if (!lights.length && sparkWash < 0.02) return;
+
+    fx.save();
+    fx.globalCompositeOperation = "lighter";
+    for (const L of lights) {
+      const reach = Math.hypot(L.x - W * 0.5, L.y - H) + H * 0.35;
+      const a = Math.min(0.45, L.p * 0.55 * (0.35 + 0.65 * (1 - L.y / H)));
+      if (a < 0.02) continue;
+      fx.fillStyle = `hsla(${L.hue},55%,18%,${a})`;
+      fx.strokeStyle = `hsla(${L.hue},50%,22%,${a * 0.8})`;
+      for (const b of skyline) b.draw(fx);
+      // Windows catch the burst
+      fx.fillStyle = `hsla(${L.hue},100%,55%,${a * 0.9})`;
+      for (const b of skyline) {
+        if (b.windows) {
+          for (let i = 0; i < b.windows.length; i += 2) {
+            const wx = b.windows[i];
+            const wy = b.windows[i + 1];
+            const d = Math.hypot(wx - L.x, wy - L.y);
+            if (d < reach * 0.85) fx.fillRect(wx, wy, 2, 2);
+          }
+        }
+        if (b.bands) {
+          for (const yy of b.bands.ys) {
+            const d = Math.hypot(b.bands.x + b.bands.w * 0.5 - L.x, yy - L.y);
+            if (d < reach) fx.fillRect(b.bands.x, yy, b.bands.w, 2);
+          }
+        }
+      }
+    }
+    if (sparkWash > 0.02) {
+      fx.fillStyle = `hsla(18,40%,14%,${sparkWash})`;
+      for (const b of skyline) b.draw(fx);
+    }
+    fx.restore();
   }
 
   // --- audio (procedural; louder) ---
@@ -695,8 +803,11 @@
       g.addColorStop(1, `hsla(${flashHue},90%,50%,0)`);
       fx.fillStyle = g;
       fx.fillRect(flashX - r, flashY - r, 2 * r, 2 * r);
-      flash *= Math.pow(0.02, dt);
     }
+
+    // AMOLED: city only when lit. Normal: city already on the bg canvas.
+    if (amoledMode) drawLitSkyline();
+    if (flash > 0.02) flash *= Math.pow(0.02, dt);
 
     for (let i = cores.length - 1; i >= 0; i--) {
       const c = cores[i];
@@ -832,11 +943,33 @@
     ws.addEventListener("close", () => setTimeout(connectWs, 1500));
   }
 
+  function beginShow() {
+    if (started) return;
+    started = true;
+    setAmoledMode(amoledToggle ? amoledToggle.checked : amoledMode);
+    armAudio();
+    if (startEl) startEl.hidden = true;
+    arm.hidden = true;
+    connectWs();
+  }
+
   window.addEventListener("resize", resize);
-  window.addEventListener("pointerdown", () => armAudio(), { passive: true });
+  if (amoledToggle) {
+    amoledToggle.addEventListener("change", () => {
+      setAmoledMode(amoledToggle.checked);
+    });
+  }
+  if (startBtn) {
+    startBtn.addEventListener("click", beginShow);
+  }
+  // Allow tapping the card background / Enter — but not before Start for audio unlock.
+  window.addEventListener("keydown", (ev) => {
+    if (!started && (ev.key === "Enter" || ev.key === " ")) {
+      ev.preventDefault();
+      beginShow();
+    }
+  });
 
   resize();
-  arm.hidden = false;
-  connectWs();
   requestAnimationFrame(frame);
 })();

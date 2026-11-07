@@ -9,15 +9,18 @@ body {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: #000000;
+  background: #000;
+  color-scheme: dark;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
+  font-family: "Segoe UI", system-ui, sans-serif;
 }
 
 .stage {
   position: fixed;
   inset: 0;
+  background: #000;
 }
 
 .layer {
@@ -26,6 +29,144 @@ body {
   display: block;
   width: 100%;
   height: 100%;
+  background: transparent;
+}
+
+#bg {
+  background: #000;
+}
+
+.start {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(ellipse 80% 50% at 50% 110%, rgba(255, 90, 20, 0.18), transparent 55%),
+    #000;
+}
+
+.start[hidden] {
+  display: none;
+}
+
+.start-card {
+  width: min(100%, 360px);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.start-kicker {
+  color: rgba(255, 160, 80, 0.7);
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.start-title {
+  color: #ffe2c0;
+  font-size: clamp(2rem, 8vw, 2.6rem);
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+}
+
+.start-copy {
+  color: rgba(255, 220, 190, 0.55);
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+  border-top: 1px solid rgba(255, 180, 100, 0.12);
+  border-bottom: 1px solid rgba(255, 180, 100, 0.12);
+  cursor: pointer;
+}
+
+.toggle-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.toggle-label {
+  color: #ffd7b0;
+  font-size: 0.95rem;
+}
+
+.toggle-hint {
+  color: rgba(255, 200, 150, 0.4);
+  font-size: 0.78rem;
+  line-height: 1.3;
+}
+
+.toggle input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.toggle-track {
+  flex: 0 0 auto;
+  width: 48px;
+  height: 28px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  position: relative;
+  transition: background 0.2s ease;
+}
+
+.toggle-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #ffe0c0;
+  transition: transform 0.2s ease;
+}
+
+.toggle input:checked + .toggle-track {
+  background: rgba(255, 110, 30, 0.85);
+}
+
+.toggle input:checked + .toggle-track .toggle-thumb {
+  transform: translateX(20px);
+}
+
+.toggle input:focus-visible + .toggle-track {
+  outline: 2px solid rgba(255, 160, 80, 0.7);
+  outline-offset: 3px;
+}
+
+.start-btn {
+  appearance: none;
+  border: 0;
+  border-radius: 999px;
+  padding: 14px 20px;
+  background: linear-gradient(180deg, #ff8a3a, #e24a12);
+  color: #1a0800;
+  font: inherit;
+  font-weight: 650;
+  font-size: 1rem;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+
+.start-btn:active {
+  transform: scale(0.98);
 }
 
 #arm {
@@ -33,13 +174,19 @@ body {
   left: 50%;
   bottom: max(28px, env(safe-area-inset-bottom));
   transform: translateX(-50%);
-  padding: 10px 16px;
-  border-radius: 999px;
-  background: rgba(8, 10, 20, 0.55);
-  color: rgba(255, 236, 200, 0.72);
-  font: 13px/1.2 system-ui, sans-serif;
-  letter-spacing: 0.02em;
+  padding: 0;
+  background: transparent;
+  color: rgba(255, 200, 140, 0.28);
+  font: 12px/1.2 system-ui, sans-serif;
+  letter-spacing: 0.04em;
   pointer-events: none;
-  backdrop-filter: blur(6px);
   z-index: 2;
+}
+
+body.mode-normal .stage {
+  background: #050208;
+}
+
+body.mode-amoled .stage {
+  background: #000;
 }
