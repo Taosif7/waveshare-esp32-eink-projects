@@ -36,6 +36,15 @@ static void send_asset(AsyncWebServerRequest *request, const char *body,
   request->send(response);
 }
 
+static void send_bin(AsyncWebServerRequest *request, const uint8_t *data,
+                     size_t len, const char *content_type) {
+  AsyncWebServerResponse *response =
+      request->beginResponse(200, content_type, data, len);
+  response->addHeader("Cache-Control", "public, max-age=86400");
+  response->addHeader("Access-Control-Allow-Origin", "*");
+  request->send(response);
+}
+
 bool web_begin() {
   WiFi.mode(WIFI_STA);
   WiFi.setHostname("diwali-cracker");
@@ -68,6 +77,14 @@ bool web_begin() {
   });
   s_server.on("/app.js", HTTP_GET, [](AsyncWebServerRequest *request) {
     send_asset(request, ASSET_APP_JS, "application/javascript; charset=utf-8");
+  });
+  s_server.on("/sounds/boom1.mp3", HTTP_GET, [](AsyncWebServerRequest *request) {
+    send_bin(request, ASSET_SOUNDS_BOOM1_MP3, ASSET_SOUNDS_BOOM1_MP3_LEN,
+             "audio/mpeg");
+  });
+  s_server.on("/sounds/boom2.mp3", HTTP_GET, [](AsyncWebServerRequest *request) {
+    send_bin(request, ASSET_SOUNDS_BOOM2_MP3, ASSET_SOUNDS_BOOM2_MP3_LEN,
+             "audio/mpeg");
   });
   s_server.onNotFound([](AsyncWebServerRequest *request) {
     request->send(404, "text/plain", "Not found");

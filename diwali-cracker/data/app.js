@@ -5,6 +5,7 @@
   const bgCanvas = document.getElementById("bg");
   const fxCanvas = document.getElementById("fx");
   const arm = document.getElementById("arm");
+  const greet = document.getElementById("greet");
   const startEl = document.getElementById("start");
   const startBtn = document.getElementById("start-btn");
   const amoledToggle = document.getElementById("amoled");
@@ -21,6 +22,12 @@
   let started = false;
   let noiseCache = null;
   let amoledMode = localStorage.getItem("diwali_amoled") !== "0";
+  let nextBurstId = 1;
+  const BURST_SCALE = 1.45; // bigger shells to fill more of the screen
+  // BlastSky boom samples (copied from https://blastsky.com/sounds/fireworks/)
+  const boomBuffers = { boom1: null, boom2: null };
+  let boomsReady = false;
+  let boomFlip = false;
   if (amoledToggle) amoledToggle.checked = amoledMode;
   document.body.classList.toggle("mode-amoled", amoledMode);
   document.body.classList.toggle("mode-normal", !amoledMode);
@@ -97,7 +104,7 @@
     dpr = Math.min(window.devicePixelRatio || 1, 2);
     W = window.innerWidth;
     H = window.innerHeight;
-    S = Math.max(0.75, Math.min(H / 900, 1.35));
+    S = Math.max(0.85, Math.min(H / 820, 1.55));
     for (const c of [bgCanvas, fxCanvas]) {
       c.width = Math.floor(W * dpr);
       c.height = Math.floor(H * dpr);
@@ -333,6 +340,24 @@
     arm.hidden = true;
   }
 
+  async function loadBoomSamples() {
+    ensureAudio();
+    const names = ["boom1", "boom2"];
+    await Promise.all(
+      names.map(async (name) => {
+        if (boomBuffers[name]) return;
+        try {
+          const res = await fetch(`/sounds/${name}.mp3`);
+          const raw = await res.arrayBuffer();
+          boomBuffers[name] = await audioCtx.decodeAudioData(raw.slice(0));
+        } catch (err) {
+          console.warn("boom sample load failed", name, err);
+        }
+      })
+    );
+    boomsReady = !!(boomBuffers.boom1 || boomBuffers.boom2);
+  }
+
   function makeNoise(duration) {
     const rate = audioCtx.sampleRate;
     const len = Math.floor(rate * duration);
@@ -351,54 +376,115 @@
     return masterGain || audioCtx.destination;
   }
 
-  function playWhistle(duration = 1.05) {
-    if (!armed || !audioCtx) return;
+  function playFuseTrail(duration = 1.6) {
+    // Burning fuse: bright sizzle + sharp spark pops + thin rising edge.
+    if (!armed || !audioCtx || !noiseCache) return;
     const t0 = audioCtx.currentTime;
-    const osc = audioCtx.createOscillator();
-    const osc2 = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    const filter = audioCtx.createBiquadFilter();
-    osc.type = "sawtooth";
-    osc2.type = "triangle";
-    osc.frequency.setValueAtTime(380, t0);
-    osc.frequency.exponentialRampToValueAtTime(1550, t0 + duration);
-    osc2.frequency.setValueAtTime(760, t0);
-    osc2.frequency.exponentialRampToValueAtTime(2100, t0 + duration);
-    filter.type = "bandpass";
-    filter.frequency.setValueAtTime(700, t0);
-    filter.frequency.exponentialRampToValueAtTime(1600, t0 + duration);
-    filter.Q.value = 2.2;
-    gain.gain.setValueAtTime(0.0001, t0);
-    gain.gain.exponentialRampToValueAtTime(0.28, t0 + 0.06);
-    gain.gain.linearRampToValueAtTime(0.22, t0 + duration * 0.7);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
-    osc.connect(filter);
-    osc2.connect(filter);
-    filter.connect(gain);
-    gain.connect(dest());
-    osc.start(t0);
-    osc2.start(t0);
-    osc.stop(t0 + duration + 0.02);
-    osc2.stop(t0 + duration + 0.02);
+    const dur = Math.max(0.45, duration);
 
-    const src = audioCtx.createBufferSource();
-    src.buffer = noiseCache;
-    const hp = audioCtx.createBiquadFilter();
-    hp.type = "highpass";
-    hp.frequency.value = 2500;
-    const ng = audioCtx.createGain();
-    ng.gain.setValueAtTime(0.0001, t0);
-    ng.gain.exponentialRampToValueAtTime(0.12, t0 + 0.08);
-    ng.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
-    src.connect(hp);
-    hp.connect(ng);
-    ng.connect(dest());
-    src.start(t0);
-    src.stop(t0 + duration);
+    // 1) Sharp fuse sizzle — brighter, louder high band.
+    {
+      const src = audioCtx.createBufferSource();
+      src.buffer = noiseCache;
+      src.loop = true;
+      const bp = audioCtx.createBiquadFilter();
+      bp.type = "bandpass";
+      bp.Q.value = 1.4;
+      bp.frequency.setValueAtTime(1600, t0);
+      bp.frequency.exponentialRampToValueAtTime(4200, t0 + dur);
+      const hp = audioCtx.createBiquadFilter();
+      hp.type = "highpass";
+      hp.frequency.value = 1200;
+      const g = audioCtx.createGain();
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.55, t0 + 0.04);
+      g.gain.setValueAtTime(0.5, t0 + dur * 0.7);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      src.connect(bp);
+      bp.connect(hp);
+      hp.connect(g);
+      g.connect(dest());
+      src.start(t0);
+      src.stop(t0 + dur + 0.02);
+    }
+
+    // 2) Mid hiss layer for body (still bright, not muddy).
+    {
+      const src = audioCtx.createBufferSource();
+      src.buffer = noiseCache;
+      src.loop = true;
+      const bp = audioCtx.createBiquadFilter();
+      bp.type = "bandpass";
+      bp.Q.value = 0.8;
+      bp.frequency.setValueAtTime(900, t0);
+      bp.frequency.exponentialRampToValueAtTime(2200, t0 + dur);
+      const g = audioCtx.createGain();
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.32, t0 + 0.05);
+      g.gain.linearRampToValueAtTime(0.28, t0 + dur * 0.65);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      src.connect(bp);
+      bp.connect(g);
+      g.connect(dest());
+      src.start(t0);
+      src.stop(t0 + dur + 0.02);
+    }
+
+    // 3) Thin rising edge — present but not a siren.
+    {
+      const osc = audioCtx.createOscillator();
+      const osc2 = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      const bp = audioCtx.createBiquadFilter();
+      osc.type = "triangle";
+      osc2.type = "sine";
+      osc.frequency.setValueAtTime(480, t0);
+      osc.frequency.exponentialRampToValueAtTime(1400, t0 + dur);
+      osc2.frequency.setValueAtTime(960, t0);
+      osc2.frequency.exponentialRampToValueAtTime(2800, t0 + dur);
+      bp.type = "bandpass";
+      bp.frequency.setValueAtTime(700, t0);
+      bp.frequency.exponentialRampToValueAtTime(1800, t0 + dur);
+      bp.Q.value = 2.2;
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.14, t0 + 0.08);
+      g.gain.linearRampToValueAtTime(0.18, t0 + dur * 0.7);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      osc.connect(bp);
+      osc2.connect(bp);
+      bp.connect(g);
+      g.connect(dest());
+      osc.start(t0);
+      osc2.start(t0);
+      osc.stop(t0 + dur + 0.02);
+      osc2.stop(t0 + dur + 0.02);
+    }
+
+    // 4) Crisp spark pops along the fuse.
+    const pops = 14 + ((Math.random() * 10) | 0);
+    for (let i = 0; i < pops; i++) {
+      const when = t0 + 0.06 + Math.random() * (dur * 0.88);
+      const src = audioCtx.createBufferSource();
+      src.buffer = noiseCache;
+      const bp = audioCtx.createBiquadFilter();
+      bp.type = "bandpass";
+      bp.frequency.value = 2800 + Math.random() * 5500;
+      bp.Q.value = 8;
+      const g = audioCtx.createGain();
+      const peak = 0.16 + Math.random() * 0.22;
+      g.gain.setValueAtTime(0.0001, when);
+      g.gain.exponentialRampToValueAtTime(peak, when + 0.002);
+      g.gain.exponentialRampToValueAtTime(0.0001, when + 0.02 + Math.random() * 0.025);
+      src.connect(bp);
+      bp.connect(g);
+      g.connect(dest());
+      src.start(when);
+      src.stop(when + 0.06);
+    }
   }
 
-  function playBoom(power = 1, y01 = 0.3) {
-    if (!armed || !audioCtx) return;
+  function playBoomProcedural(power = 1, y01 = 0.3) {
+    if (!armed || !audioCtx || !noiseCache) return;
     const t0 = audioCtx.currentTime + 0.04;
     const p = Math.max(0.35, power) * (0.75 + (1 - y01) * 0.35);
 
@@ -431,6 +517,31 @@
     og.connect(dest());
     osc.start(t0);
     osc.stop(t0 + 0.52);
+  }
+
+  function playBoom(power = 1, y01 = 0.3, prefer) {
+    // Playback matches BlastSky: sample + slight rate jitter + height delay.
+    if (!armed || !audioCtx) return;
+    const name =
+      prefer ||
+      (boomFlip ? "boom1" : "boom2");
+    boomFlip = !boomFlip;
+    const buf = boomBuffers[name] || boomBuffers.boom2 || boomBuffers.boom1;
+    if (!buf) {
+      playBoomProcedural(power, y01);
+      return;
+    }
+    const delay = 0.06 + (1 - Math.max(0, Math.min(1, y01))) * 0.22;
+    const t0 = audioCtx.currentTime + delay;
+    const src = audioCtx.createBufferSource();
+    src.buffer = buf;
+    src.playbackRate.value = 0.95 + 0.1 * Math.random();
+    const gain = audioCtx.createGain();
+    const vol = Math.min(1.35, Math.max(0.35, power) * 1.15);
+    gain.gain.value = vol * (name === "boom2" ? 1 : 0.85);
+    src.connect(gain);
+    gain.connect(dest());
+    src.start(t0);
   }
 
   function playCrackle(count = 22) {
@@ -493,14 +604,30 @@
     sparks.push(p);
   }
 
+  function activeBurstCount() {
+    const ids = new Set();
+    for (const s of sparks) {
+      if (s.burstId && !s.dust) ids.add(s.burstId);
+    }
+    return ids.size;
+  }
+
+  function updateGreeting() {
+    if (!greet) return;
+    const on = activeBurstCount() >= 5;
+    greet.hidden = false;
+    greet.classList.toggle("is-on", on);
+  }
+
   function burst(x, y, r) {
     const shape = r.shape || "sphere";
     const ringish = shape === "ring" || shape === "spiral" || shape === "rose";
-    const count = Math.max(8, Math.floor(r.count));
+    const count = Math.max(8, Math.floor(r.count * BURST_SCALE));
+    const burstId = r.burstId || 0;
     for (let i = 0; i < count; i++) {
       if (sparks.length >= maxSparks) return;
       let vx; let vy;
-      const speed = r.speed * S * (ringish ? 1 : 0.93 + 0.14 * Math.random());
+      const speed = r.speed * S * BURST_SCALE * (ringish ? 1 : 0.93 + 0.14 * Math.random());
       if (shape === "ring") {
         const a = (i / count) * Math.PI * 2;
         const ex = Math.cos(a) * speed;
@@ -542,7 +669,7 @@
         life: ringish ? r.life : r.life * rand(0.85, 1.12),
         h: hAlt !== undefined && vx < 0 ? hAlt : r.h,
         h2: hAlt !== undefined && vx < 0 ? hAlt : r.h2,
-        size: (r.size ?? 1.7) * (ringish ? 1 : rand(0.85, 1.25)),
+        size: (r.size ?? 1.7) * BURST_SCALE * (ringish ? 1 : rand(0.85, 1.25)),
         drag: ringish ? r.drag : r.drag * (1 + rand(-0.002, 0.002)),
         g: r.g * S * (ringish ? 0.55 : 1),
         glitter: !!r.glitter,
@@ -554,6 +681,7 @@
         blink: r.blink,
         ph: 6.28 * Math.random(),
         sw: r.sw,
+        burstId,
       });
     }
   }
@@ -561,8 +689,9 @@
   function explode(x, y) {
     const type = weightedShell();
     const [h0, sat0] = paletteHue();
-    const h1 = h0 + rand(-18, 12);
     const h2 = h0 + rand(8, 40);
+    const burstId = nextBurstId++;
+    const fire = (opts) => burst(x, y, { ...opts, burstId });
     flashAt(x, y, h0, 0.55);
     playBoom(1, y / H);
     if (type === "crackle" || type === "chryscrackle" || Math.random() > 0.6) {
@@ -571,63 +700,63 @@
 
     switch (type) {
       case "peony":
-        burst(x, y, { count: 190, speed: 300, life: 1.9, drag: 0.975, g: 45, h: h0, h2: h2 });
+        fire({ count: 190, speed: 300, life: 1.9, drag: 0.975, g: 45, h: h0, h2: h2 });
         break;
       case "chrysanthemum":
-        burst(x, y, { count: 160, speed: 320, life: 2.4, drag: 0.978, g: 45, h: h0, h2: h2, trail: 0.22 });
+        fire({ count: 160, speed: 320, life: 2.4, drag: 0.978, g: 45, h: h0, h2: h2, trail: 0.22 });
         break;
       case "willow":
-        burst(x, y, { count: 120, speed: 250, life: 3.6, drag: 0.968, g: 75, h: 40, h2: 22, sat: 100, trail: 0.5, size: 1.5 });
+        fire({ count: 120, speed: 250, life: 3.6, drag: 0.968, g: 75, h: 40, h2: 22, sat: 100, trail: 0.5, size: 1.5 });
         break;
       case "ring":
-        burst(x, y, { count: 110, speed: 260, life: 1.9, drag: 0.976, g: 40, h: h0, h2: h2, shape: "ring" });
+        fire({ count: 110, speed: 260, life: 1.9, drag: 0.976, g: 40, h: h0, h2: h2, shape: "ring" });
         break;
       case "palm":
-        burst(x, y, { count: 120, speed: 380, life: 2.6, drag: 0.972, g: 55, h: 42, h2: 18, sat: 100, trail: 0.7, shape: "palm" });
+        fire({ count: 120, speed: 380, life: 2.6, drag: 0.972, g: 55, h: 42, h2: 18, sat: 100, trail: 0.7, shape: "palm" });
         break;
       case "crackle":
-        burst(x, y, { count: 200, speed: 285, life: 2, drag: 0.974, g: 42, h: 48, h2: 30, sat: 100, glitter: true, size: 1.3 });
+        fire({ count: 200, speed: 285, life: 2, drag: 0.974, g: 42, h: 48, h2: 30, sat: 100, glitter: true, size: 1.3 });
         break;
       case "crossette":
-        burst(x, y, { count: 16, speed: 260, life: 2, drag: 0.978, g: 40, h: h0, h2: h2, size: 2.4, split: 0.8, trail: 0.3 });
+        fire({ count: 16, speed: 260, life: 2, drag: 0.978, g: 40, h: h0, h2: h2, size: 2.4, split: 0.8, trail: 0.3 });
         break;
       case "spiral":
-        burst(x, y, { count: 130, speed: 330, life: 2.2, drag: 0.976, g: 38, h: h0, h2: h2, shape: "spiral" });
+        fire({ count: 130, speed: 330, life: 2.2, drag: 0.976, g: 38, h: h0, h2: h2, shape: "spiral" });
         break;
       case "pistil":
-        burst(x, y, { count: 140, speed: 300, life: 2, drag: 0.976, g: 42, h: h0, h2: h2 });
-        burst(x, y, { count: 70, speed: 130, life: 1.7, drag: 0.972, g: 38, h: h0 + pick([120, 150, 180, 210]), h2: h0 + 150, sat: 100, size: 2 });
+        fire({ count: 140, speed: 300, life: 2, drag: 0.976, g: 42, h: h0, h2: h2 });
+        fire({ count: 70, speed: 130, life: 1.7, drag: 0.972, g: 38, h: h0 + pick([120, 150, 180, 210]), h2: h0 + 150, sat: 100, size: 2 });
         break;
       case "kamuro":
-        burst(x, y, { count: 180, speed: 300, life: 4.8, drag: 0.972, g: 82, h: 40, h2: 22, sat: sat0, trail: 0.85, size: 1.5 });
+        fire({ count: 180, speed: 300, life: 4.8, drag: 0.972, g: 82, h: 40, h2: 22, sat: sat0, trail: 0.85, size: 1.5 });
         break;
       case "brocade":
-        burst(x, y, { count: 200, speed: 290, life: 3.8, drag: 0.97, g: 72, h: 38, h2: 24, sat: sat0, trail: 0.7, glitter: true });
+        fire({ count: 200, speed: 290, life: 3.8, drag: 0.97, g: 72, h: 38, h2: 24, sat: sat0, trail: 0.7, glitter: true });
         break;
       case "strobe":
-        burst(x, y, { count: 150, speed: 260, life: 2.8, drag: 0.976, g: 36, h: 210, h2: 200, sat: 10, size: 1.9, blink: 16 });
+        fire({ count: 150, speed: 260, life: 2.8, drag: 0.976, g: 36, h: 210, h2: 200, sat: 10, size: 1.9, blink: 16 });
         break;
       case "comet":
-        burst(x, y, { count: 14, speed: 210, life: 2.7, drag: 0.985, g: 26, h: h0, h2: h2, size: 2.8, trail: 1.3 });
+        fire({ count: 14, speed: 210, life: 2.7, drag: 0.985, g: 26, h: h0, h2: h2, size: 2.8, trail: 1.3 });
         break;
       case "twocolor":
-        burst(x, y, { count: 190, speed: 300, life: 2, drag: 0.975, g: 45, h: h0, h2: h0, hAlt: h0 + 150 });
+        fire({ count: 190, speed: 300, life: 2, drag: 0.975, g: 45, h: h0, h2: h0, hAlt: h0 + 150 });
         break;
       case "colorchange":
-        burst(x, y, { count: 190, speed: 300, life: 2.7, drag: 0.976, g: 42, h: h0, h2: h0 + pick([100, 140, 200]), sw: 0.5 });
+        fire({ count: 190, speed: 300, life: 2.7, drag: 0.976, g: 42, h: h0, h2: h0 + pick([100, 140, 200]), sw: 0.5 });
         break;
       case "chryscrackle":
-        burst(x, y, { count: 150, speed: 320, life: 2.4, drag: 0.978, g: 45, h: h0, h2: h2, trail: 0.22 });
-        burst(x, y, { count: 90, speed: 170, life: 2.1, drag: 0.974, g: 40, h: 48, h2: 44, sat: 70, glitter: true, size: 1.3 });
+        fire({ count: 150, speed: 320, life: 2.4, drag: 0.978, g: 45, h: h0, h2: h2, trail: 0.22 });
+        fire({ count: 90, speed: 170, life: 2.1, drag: 0.974, g: 40, h: 48, h2: 44, sat: 70, glitter: true, size: 1.3 });
         break;
       case "dahlia":
-        burst(x, y, { count: 150, speed: 300, life: 2.2, drag: 0.975, g: 38, h: h0, h2: h2, shape: "rose" });
+        fire({ count: 150, speed: 300, life: 2.2, drag: 0.975, g: 38, h: h0, h2: h2, shape: "rose" });
         break;
       case "silver":
-        burst(x, y, { count: 190, speed: 280, life: 4.4, drag: 0.968, g: 80, h: 210, h2: 200, sat: 12, trail: 0.9, glitter: true, size: 1.6 });
+        fire({ count: 190, speed: 280, life: 4.4, drag: 0.968, g: 80, h: 210, h2: 200, sat: 12, trail: 0.9, glitter: true, size: 1.6 });
         break;
       case "double":
-        burst(x, y, { count: 140, speed: 290, life: 1.9, drag: 0.975, g: 45, h: h0, h2: h2 });
+        fire({ count: 140, speed: 290, life: 1.9, drag: 0.975, g: 45, h: h0, h2: h2 });
         delayed.push({
           t: 0.42,
           fn: () => {
@@ -636,13 +765,14 @@
             const nh = h0 + pick([50, 90, 180]);
             flashAt(nx, ny, nh, 0.5);
             playBoom(0.85, ny / H);
-            burst(nx, ny, { count: 130, speed: 260, life: 1.8, drag: 0.975, g: 45, h: nh, h2: nh });
+            burst(nx, ny, { count: 130, speed: 260, life: 1.8, drag: 0.975, g: 45, h: nh, h2: nh, burstId });
           },
         });
         break;
       default:
-        burst(x, y, { count: 180, speed: 300, life: 1.9, drag: 0.975, g: 45, h: h0, h2: h2 });
+        fire({ count: 180, speed: 300, life: 1.9, drag: 0.975, g: 45, h: h0, h2: h2 });
     }
+    updateGreeting();
   }
 
   function spawnRocket() {
@@ -677,7 +807,7 @@
   }
 
   function onFuse() {
-    playWhistle(FUSE_MS / 1000 + rand(0.05, 0.2));
+    playFuseTrail(FUSE_MS / 1000 + rand(0.05, 0.15));
   }
 
   function step(dt) {
@@ -749,6 +879,7 @@
             h: s.h, h2: s.h2,
             size: 1.5, drag: 0.965, g: 40 * S,
             glitter: false, trail: 0, dust: false, sat: s.sat, split: 0,
+            burstId: s.burstId,
           });
         }
         const last = sparks.pop();
@@ -778,23 +909,35 @@
             vx: 0.04 * s.vx + rand(-7, 7),
             vy: 0.04 * s.vy + rand(-3, 10),
             age: 0,
-            life: rand(0.6, 1.2),
+            life: rand(0.25, 0.55),
             h: s.h, h2: s.h2,
             size: 1, drag: 0.95, g: 26 * S,
             glitter: false, trail: 0, dust: true, sat: s.sat, split: 0,
+            burstId: s.burstId,
           });
         }
       }
     }
     for (const p of born) pushSpark(p);
+    updateGreeting();
   }
 
   function draw(dt) {
-    // BlastSky-style persistence fade on FX layer
-    fx.globalCompositeOperation = "destination-out";
-    fx.fillStyle = `rgba(0,0,0,${1 - Math.pow(9e-4, dt)})`;
-    fx.fillRect(0, 0, W, H);
-    fx.globalCompositeOperation = "lighter";
+    const idle =
+      !sparks.length && !rockets.length && !cores.length && flash < 0.02;
+    if (idle) {
+      // Hard clear so trail/smoke never leaves a permanent haze.
+      fx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      fx.globalCompositeOperation = "source-over";
+      fx.clearRect(0, 0, W, H);
+    } else {
+      // Faster fade than BlastSky's default — trails die cleanly.
+      fx.globalCompositeOperation = "destination-out";
+      fx.fillStyle = `rgba(0,0,0,${Math.min(0.55, 0.18 + dt * 8)})`;
+      fx.fillRect(0, 0, W, H);
+      fx.globalCompositeOperation = "lighter";
+    }
+    if (!idle) fx.globalCompositeOperation = "lighter";
 
     if (flash > 0.02) {
       const r = 0.7 * Math.min(W, H);
@@ -943,11 +1086,16 @@
     ws.addEventListener("close", () => setTimeout(connectWs, 1500));
   }
 
-  function beginShow() {
+  async function beginShow() {
     if (started) return;
     started = true;
     setAmoledMode(amoledToggle ? amoledToggle.checked : amoledMode);
     armAudio();
+    if (startBtn) {
+      startBtn.disabled = true;
+      startBtn.textContent = "Loading…";
+    }
+    await loadBoomSamples();
     if (startEl) startEl.hidden = true;
     arm.hidden = true;
     connectWs();
