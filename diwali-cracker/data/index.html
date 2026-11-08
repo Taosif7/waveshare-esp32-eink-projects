@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#000000" />
+  <title>Diwali Cracker</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="stage">
+    <canvas id="bg" class="layer" aria-hidden="true"></canvas>
+    <canvas id="fx" class="layer" aria-label="Fireworks"></canvas>
+  </div>
+
+  <div id="start" class="start">
+    <div class="start-card">
+      <p class="start-kicker">Diwali Cracker</p>
+      <h1 class="start-title">Light it up</h1>
+      <p class="start-copy">Press the physical button when you’re ready. Open this page, then fire.</p>
+
+      <label class="toggle" for="amoled">
+        <span class="toggle-text">
+          <span class="toggle-label">AMOLED mode</span>
+          <span class="toggle-hint">True black sky — city only when lit</span>
+        </span>
+        <input id="amoled" type="checkbox" role="switch" />
+        <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+      </label>
+
+      <button id="start-btn" class="start-btn" type="button">Start</button>
+    </div>
+  </div>
+
+  <div id="greet" class="greet" hidden aria-live="polite">Happy Diwali</div>
+  <div id="arm" hidden>Tap once if sound is muted</div>
+  <script src="/app.js"></script>
+</body>
+</html>

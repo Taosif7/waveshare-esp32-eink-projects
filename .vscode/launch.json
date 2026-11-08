@@ -146,6 +146,22 @@
       }
     },
     {
+      "name": "diwali-cracker",
+      "type": "node",
+      "request": "launch",
+      "preLaunchTask": "flash: diwali-cracker",
+      "runtimeArgs": [
+        "-e",
+        "process.exit(0)"
+      ],
+      "console": "internalConsole",
+      "internalConsoleOptions": "neverOpen",
+      "presentation": {
+        "group": "Flash",
+        "order": 10
+      }
+    },
+    {
       "name": "juliet-oled",
       "type": "node",
       "request": "launch",
@@ -158,7 +174,7 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 10
+        "order": 11
       }
     },
     {
@@ -174,7 +190,7 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 11
+        "order": 12
       }
     },
     {
@@ -190,7 +206,7 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 12
+        "order": 13
       }
     },
     {
@@ -206,7 +222,7 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 13
+        "order": 14
       }
     },
     {
@@ -222,7 +238,7 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 14
+        "order": 15
       }
     },
     {
@@ -238,7 +254,7 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 15
+        "order": 16
       }
     },
     {
@@ -254,7 +270,7 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 16
+        "order": 17
       }
     },
     {
@@ -270,7 +286,7 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 17
+        "order": 18
       }
     },
     {
@@ -286,7 +302,7 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 18
+        "order": 19
       }
     },
     {
@@ -302,7 +318,7 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 19
+        "order": 20
       }
     },
     {
@@ -318,7 +334,7 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 20
+        "order": 21
       }
     }
   ]
