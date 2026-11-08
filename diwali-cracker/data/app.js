@@ -612,11 +612,26 @@
     return ids.size;
   }
 
+  let greetHoldUntil = 0;
+  // 2s hold + 5s fade = 7s total before the class can restart.
+  const GREET_HOLD_MS = 2000;
+  const GREET_FADE_MS = 5000;
+  const GREET_TOTAL_MS = GREET_HOLD_MS + GREET_FADE_MS;
+
   function updateGreeting() {
     if (!greet) return;
-    const on = activeBurstCount() >= 5;
-    greet.hidden = false;
-    greet.classList.toggle("is-on", on);
+    const now = performance.now();
+    if (activeBurstCount() >= 5 && !greet.classList.contains("is-on")) {
+      greetHoldUntil = now + GREET_TOTAL_MS;
+      greet.hidden = false;
+      greet.classList.remove("is-on");
+      void greet.offsetWidth;
+      greet.classList.add("is-on");
+      return;
+    }
+    if (greet.classList.contains("is-on") && now >= greetHoldUntil) {
+      greet.classList.remove("is-on");
+    }
   }
 
   function burst(x, y, r) {

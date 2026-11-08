@@ -172,26 +172,48 @@ body {
 .greet {
   position: fixed;
   left: 50%;
-  top: 18%;
-  transform: translateX(-50%);
+  top: 50%;
+  transform: translate(-50%, -50%) scale(0.52);
   z-index: 4;
   pointer-events: none;
   color: #ffe6c2;
   font-family: Georgia, "Times New Roman", serif;
-  font-size: clamp(2rem, 9vw, 3.4rem);
+  font-size: clamp(3.4rem, 16vw, 7.2rem);
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
+  text-align: center;
   text-shadow:
-    0 0 24px rgba(255, 120, 40, 0.55),
-    0 0 60px rgba(255, 60, 0, 0.35),
-    0 2px 0 rgba(0, 0, 0, 0.8);
+    0 0 28px rgba(255, 120, 40, 0.6),
+    0 0 72px rgba(255, 60, 0, 0.4),
+    0 3px 0 rgba(0, 0, 0, 0.8);
   opacity: 0;
-  transition: opacity 0.45s ease;
   white-space: nowrap;
+  will-change: transform, opacity;
 }
 
 .greet.is-on {
-  opacity: 1;
+  animation: greet-zoom-fade 7s linear forwards;
+}
+
+@keyframes greet-zoom-fade {
+  /* Zoom in over the first 2s, fully visible */
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.52);
+  }
+  8% {
+    opacity: 1;
+  }
+  28.57% {
+    /* ~2s / 7s */
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.18);
+  }
+  /* Fade out over the remaining 5s while easing a little more zoom */
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.32);
+  }
 }
 
 #arm {
