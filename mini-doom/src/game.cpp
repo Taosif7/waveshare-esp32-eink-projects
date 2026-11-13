@@ -13,6 +13,7 @@ namespace {
 
 constexpr int kMapW = 16;
 constexpr int kMapH = 16;
+constexpr int kFloorCount = 2;
 constexpr int kViewW = 128;
 constexpr int kViewH = 56;
 constexpr int kHorizon = 22;
@@ -27,11 +28,19 @@ constexpr uint8_t kBayer4x4[16] = {
 
 // +Y is south, so the rows below read the way they are drawn. Angle 0 faces east.
 // Open, winding corridors lead from the start to the exit.
-const char *const kMap[kMapH] = {
+const char *const kMaps[kFloorCount][kMapH] = {
+  {
     "################", "###@.###########", "####.###########", "####.###########",
     "####....a.######", "#######e#.######", "#######...######", "#a........######",
-    "#####.##########", "#####hm#########", "#####.##########", "###v..........x#",
+    "#####.##########", "#####hm#########", "#####.##########", "###v......rrr^.#",
     "################", "################", "################", "################",
+  },
+  {
+    "################", "##x...##########", "#####.##########", "#####.##########",
+    "#####.##########", "#####.##########", "#####.##########", "##....e.........",
+    "###############.", "###############.", "###############.", "###...a...rrr^..",
+    "################", "################", "################", "################",
+  },
 };
 
 enum Kind : uint8_t { kGuard, kBeast };
@@ -81,6 +90,7 @@ enum class Mode : uint8_t { Title, Play, Dead, Won };
 
 Mode g_mode = Mode::Title;
 bool g_map = false;
+uint8_t g_floor = 0;
 float g_px = 1.5f;
 float g_py = 1.5f;
 float g_ang = 0;
@@ -109,7 +119,15 @@ int g_enemy_n = 0;
 Pickup g_pickups[kMaxPickup];
 int g_pickup_n = 0;
 Shot g_shots[kMaxShot];
+Enemy g_saved_enemies[kFloorCount][kMaxEnemy];
+Pickup g_saved_pickups[kFloorCount][kMaxPickup];
+int g_saved_enemy_n[kFloorCount] = {};
+int g_saved_pickup_n[kFloorCount] = {};
+int g_saved_exit_x[kFloorCount] = {-1, -1};
+int g_saved_exit_y[kFloorCount] = {-1, -1};
+bool g_floor_loaded[kFloorCount] = {};
 uint16_t g_z[kViewW];
+uint16_t g_ramp_invz[kViewH][kViewW];
 Bill g_bills[24];
 int g_bill_n = 0;
 
@@ -131,11 +149,36 @@ char raw_at(int x, int y) {
   if (x < 0 || y < 0 || x >= kMapW || y >= kMapH) {
     return '#';
   }
-  return kMap[y][x];
+  return kMaps[g_floor][y][x];
 }
 
 bool block_ray(int x, int y) {
   return raw_at(x, y) == '#';
+}
+
+int camera_horizon() {
+  return kHorizon + g_bob;
+}
+
+float floor_base_z() {
+  return g_floor == 0 ? 0.0f : 0.75f;
+}
+
+float camera_z() {
+  const int x = (int)floorf(g_px);
+  const int y = (int)floorf(g_py);
+  const char cell = raw_at(x, y);
+  if (cell == 'r' || (g_floor == 0 && cell == '^')) {
+    float progress = (g_px - 10.0f) / 3.0f;
+    if (progress < 0.0f) {
+      progress = 0.0f;
+    }
+    if (progress > 1.0f) {
+      progress = 1.0f;
+    }
+    return 0.5f + progress * 0.75f;
+  }
+  return floor_base_z() + 0.5f;
 }
 
 bool block_body(float x, float y) {
@@ -192,33 +235,35 @@ void check_art() {
   }
 }
 
-void begin_level() {
+void save_floor_state() {
+  g_saved_enemy_n[g_floor] = g_enemy_n;
+  g_saved_pickup_n[g_floor] = g_pickup_n;
+  g_saved_exit_x[g_floor] = g_exit_x;
+  g_saved_exit_y[g_floor] = g_exit_y;
+  memcpy(g_saved_enemies[g_floor], g_enemies, sizeof g_enemies);
+  memcpy(g_saved_pickups[g_floor], g_pickups, sizeof g_pickups);
+  g_floor_loaded[g_floor] = true;
+}
+
+void load_floor_state() {
+  if (g_floor_loaded[g_floor]) {
+    g_enemy_n = g_saved_enemy_n[g_floor];
+    g_pickup_n = g_saved_pickup_n[g_floor];
+    g_exit_x = g_saved_exit_x[g_floor];
+    g_exit_y = g_saved_exit_y[g_floor];
+    memcpy(g_enemies, g_saved_enemies[g_floor], sizeof g_enemies);
+    memcpy(g_pickups, g_saved_pickups[g_floor], sizeof g_pickups);
+    return;
+  }
+
   g_enemy_n = 0;
   g_pickup_n = 0;
   g_exit_x = -1;
   g_exit_y = -1;
-  memset(g_shots, 0, sizeof g_shots);
-  g_hp = 100;
-  g_armor = 0;
-  g_ammo = 24;
-  g_shotgun = false;
-  g_ang = 0;
-  g_bob = 0;
-  g_bob_phase = 0;
-  g_kick = 0;
-  g_map = false;
-  g_banner[0] = '\0';
-  g_banner_until = 0;
-  g_pain_until = 0;
-  g_invuln = 0;
-  g_flash_until = 0;
-  g_next_shot = millis() + 400;
-  g_px = 1.5f;
-  g_py = 1.5f;
-
+  const uint32_t now = millis();
   for (int y = 0; y < kMapH; ++y) {
     for (int x = 0; x < kMapW; ++x) {
-      const char c = kMap[y][x];
+      const char c = kMaps[g_floor][y][x];
       const float cx = (float)x + 0.5f;
       const float cy = (float)y + 0.5f;
       if (c == '@') {
@@ -234,22 +279,52 @@ void begin_level() {
         e.kind = (c == 'm') ? kBeast : kGuard;
         e.hp = (e.kind == kBeast) ? 64 : 30;
         e.alive = true;
-        e.next_act = millis() + (uint32_t)g_enemy_n * 350u;
+        e.next_act = now + (uint32_t)g_enemy_n * 350u;
         ++g_enemy_n;
       } else if ((c == 'a' || c == 'h' || c == 'v' || c == 'g') &&
                  g_pickup_n < kMaxPickup) {
-        Pickup &p = g_pickups[g_pickup_n];
+        Pickup &p = g_pickups[g_pickup_n++];
         p.x = cx;
         p.y = cy;
         p.kind = c;
         p.live = true;
-        ++g_pickup_n;
       } else if (c == 'x') {
         g_exit_x = x;
         g_exit_y = y;
       }
     }
   }
+  save_floor_state();
+}
+
+void begin_level() {
+  memset(g_floor_loaded, 0, sizeof g_floor_loaded);
+  memset(g_saved_enemy_n, 0, sizeof g_saved_enemy_n);
+  memset(g_saved_pickup_n, 0, sizeof g_saved_pickup_n);
+  for (int i = 0; i < kFloorCount; ++i) {
+    g_saved_exit_x[i] = -1;
+    g_saved_exit_y[i] = -1;
+  }
+  memset(g_shots, 0, sizeof g_shots);
+  g_hp = 100;
+  g_armor = 0;
+  g_ammo = 24;
+  g_shotgun = false;
+  g_ang = 0;
+  g_bob = 0;
+  g_bob_phase = 0;
+  g_kick = 0;
+  g_map = false;
+  g_floor = 0;
+  g_banner[0] = '\0';
+  g_banner_until = 0;
+  g_pain_until = 0;
+  g_invuln = 0;
+  g_flash_until = 0;
+  g_next_shot = millis() + 400;
+  g_px = 1.5f;
+  g_py = 1.5f;
+  load_floor_state();
 
   g_mode = Mode::Play;
   aim();
@@ -327,7 +402,6 @@ void draw_gradient_logo() {
 void draw_title() {
   oled.clearBuffer();
   draw_gradient_logo();
-  text_center(51, "EPISODE 1  /  ENTRY");
   text_center(57, "PRESS FIRE TO START");
   oled.sendBuffer();
 }
@@ -348,11 +422,15 @@ void draw_map() {
   const int oy = (64 - kMapH * kCell) / 2;
   for (int y = 0; y < kMapH; ++y) {
     for (int x = 0; x < kMapW; ++x) {
-      const char c = kMap[y][x];
+      const char c = kMaps[g_floor][y][x];
       const int x0 = ox + x * kCell;
       const int y0 = oy + y * kCell;
       if (c == '#') {
         fill_box(buf, x0, y0, kCell, kCell);
+      } else if (c == '^' || c == 'r') {
+        for (int i = 0; i < kCell; ++i) {
+          pixel(buf, x0 + i, y0 + kCell - 1 - i, true);
+        }
       }
     }
   }
@@ -385,7 +463,8 @@ void draw_map() {
   const int fx = (int)lroundf(cosf(g_ang));
   const int fy = (int)lroundf(sinf(g_ang));
   pixel(buf, px + fx, py + fy, true);
-  oled.drawStr(1, 2, "MAP");
+  oled.drawStr(1, 2, g_floor == 0 ? "FLOOR 1" : "FLOOR 2");
+  oled.drawStr(1, 13, g_floor == 0 ? "RAMP UP" : "RAMP DN");
   oled.drawStr(1, 54, "SW TO CLOSE");
   oled.sendBuffer();
 }
@@ -397,7 +476,7 @@ void dither_column(uint8_t *buf, int x, int y0, int y1) {
   if (y1 > kViewH) {
     y1 = kViewH;
   }
-  const int horizon = kHorizon + g_bob;
+  const int horizon = camera_horizon();
   for (int y = y0; y < y1; ++y) {
     const int band = y < horizon ? horizon - y : y - horizon;
     const uint8_t threshold = band > 18 ? 8 : (band > 9 ? 5 : 3);
@@ -442,6 +521,119 @@ void paint_tex(uint8_t *buf, int x, int y0, int y1, int span0, int span_h,
       continue;
     }
     pixel(buf, x, y, true);
+  }
+}
+
+void draw_ramp_surface(uint8_t *buf) {
+  struct Vertex {
+    float side;
+    float depth;
+    float z;
+  };
+  struct ScreenVertex {
+    float x;
+    float y;
+    float inv_depth;
+  };
+
+  // Transform the ramp's four corners into camera space, then clip at the
+  // near plane so the mesh remains valid when the player is on the incline.
+  constexpr float kNear = 0.12f;
+  const float det = g_plane_x * g_dir_y - g_dir_x * g_plane_y;
+  if (fabsf(det) < 0.001f) {
+    return;
+  }
+  const float inv_det = 1.0f / det;
+  const float wx[4] = {10.0f, 13.0f, 13.0f, 10.0f};
+  const float wy[4] = {11.0f, 11.0f, 12.0f, 12.0f};
+  Vertex source[4];
+  for (int i = 0; i < 4; ++i) {
+    const float dx = wx[i] - g_px;
+    const float dy = wy[i] - g_py;
+    source[i].side = inv_det * (g_dir_y * dx - g_dir_x * dy);
+    source[i].depth = inv_det * (-g_plane_y * dx + g_plane_x * dy);
+    source[i].z = (wx[i] - 10.0f) * 0.25f;
+  }
+
+  Vertex clipped[8];
+  int clipped_n = 0;
+  Vertex previous = source[3];
+  bool previous_in = previous.depth >= kNear;
+  for (int i = 0; i < 4; ++i) {
+    const Vertex current = source[i];
+    const bool current_in = current.depth >= kNear;
+    if (current_in != previous_in) {
+      const float t = (kNear - previous.depth) / (current.depth - previous.depth);
+      clipped[clipped_n++] = {
+          previous.side + t * (current.side - previous.side), kNear,
+          previous.z + t * (current.z - previous.z)};
+    }
+    if (current_in) {
+      clipped[clipped_n++] = current;
+    }
+    previous = current;
+    previous_in = current_in;
+  }
+  if (clipped_n < 3) {
+    return;
+  }
+
+  ScreenVertex screen[8];
+  const float eye_z = camera_z();
+  const float horizon = (float)camera_horizon();
+  for (int i = 0; i < clipped_n; ++i) {
+    const Vertex &v = clipped[i];
+    screen[i].inv_depth = 1.0f / v.depth;
+    screen[i].x = (float)kViewW * 0.5f * (1.0f + v.side * screen[i].inv_depth);
+    screen[i].y = horizon - (v.z - eye_z) * (float)kViewH * screen[i].inv_depth;
+  }
+
+  float wall_inv[kViewW];
+  for (int x = 0; x < kViewW; ++x) {
+    wall_inv[x] = g_z[x] == 65535 ? 0.0f : 256.0f / (float)g_z[x];
+  }
+  memset(g_ramp_invz, 0, sizeof g_ramp_invz);
+
+  // Fan-triangulate the clipped quad and rasterize it with reciprocal-depth
+  // interpolation. Tread bands and the pixel dither make the incline legible.
+  for (int tri = 1; tri + 1 < clipped_n; ++tri) {
+    const ScreenVertex &a = screen[0];
+    const ScreenVertex &b = screen[tri];
+    const ScreenVertex &c = screen[tri + 1];
+    const float area = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+    if (fabsf(area) < 0.001f) {
+      continue;
+    }
+    int min_x = (int)floorf(fminf(a.x, fminf(b.x, c.x)));
+    int max_x = (int)ceilf(fmaxf(a.x, fmaxf(b.x, c.x)));
+    int min_y = (int)floorf(fminf(a.y, fminf(b.y, c.y)));
+    int max_y = (int)ceilf(fmaxf(a.y, fmaxf(b.y, c.y)));
+    if (min_x < 0) min_x = 0;
+    if (max_x >= kViewW) max_x = kViewW - 1;
+    if (min_y < 0) min_y = 0;
+    if (max_y >= kViewH) max_y = kViewH - 1;
+
+    const float inv_area = 1.0f / area;
+    for (int y = min_y; y <= max_y; ++y) {
+      for (int x = min_x; x <= max_x; ++x) {
+        const float px = (float)x + 0.5f;
+        const float py = (float)y + 0.5f;
+        const float wa = ((b.x - px) * (c.y - py) - (b.y - py) * (c.x - px)) * inv_area;
+        const float wb = ((c.x - px) * (a.y - py) - (c.y - py) * (a.x - px)) * inv_area;
+        const float wc = 1.0f - wa - wb;
+        if (wa < -0.001f || wb < -0.001f || wc < -0.001f) {
+          continue;
+        }
+        const float inv_depth = wa * a.inv_depth + wb * b.inv_depth + wc * c.inv_depth;
+        if (inv_depth <= wall_inv[x]) {
+          continue;
+        }
+        g_ramp_invz[y][x] = (uint16_t)fminf(inv_depth * 4096.0f, 65534.0f);
+        const uint8_t rank = kBayer4x4[(y & 3) * 4 + (x & 3)];
+        const bool tread_groove = (y & 3) == 0;
+        pixel(buf, x, y, tread_groove ? rank < 3 : rank < 12);
+      }
+    }
   }
 }
 
@@ -497,11 +689,13 @@ void draw_bill(uint8_t *buf, const Bill &b) {
   if (sprite_w < 1) {
     sprite_w = 1;
   }
-  const int horizon = kHorizon + g_bob;
-  const int bottom = horizon + column_h / 2;
+  const int horizon = camera_horizon();
+  const float local_eye_z = camera_z() - floor_base_z();
+  const int bottom = horizon + (int)(local_eye_z * (float)column_h);
   const int top = bottom - sprite_h;
   const int left = (int)(kViewW * 0.5f * (1.0f + tx / ty)) - sprite_w / 2;
   const uint16_t sz = (uint16_t)fminf(ty * 256.0f, 65535.0f);
+  const uint16_t sprite_invz = sz == 0 ? 65535 : (uint16_t)(1048576UL / sz);
   for (int sx = 0; sx < sprite_w; ++sx) {
     const int x = left + sx;
     if (x < 0 || x >= kViewW || sz >= g_z[x]) {
@@ -514,6 +708,9 @@ void draw_bill(uint8_t *buf, const Bill &b) {
     for (int sy = 0; sy < sprite_h; ++sy) {
       const int y = top + sy;
       if (y < 0 || y >= kViewH) {
+        continue;
+      }
+      if (sprite_invz <= g_ramp_invz[y][x]) {
         continue;
       }
       if (b.flash) {
@@ -555,7 +752,7 @@ void stamp(uint8_t *buf, const char *const *rows, int w, int h, int ox, int oy) 
 
 void draw_crosshair(uint8_t *buf) {
   const int x = kViewW / 2;
-  const int y = kHorizon + g_bob;
+  const int y = camera_horizon();
   for (int i = -3; i <= 3; ++i) {
     if (i == 0) {
       continue;
@@ -621,7 +818,7 @@ void draw_world() {
         hit = 1;
         break;
       }
-      const char c = kMap[map_y][map_x];
+      const char c = kMaps[g_floor][map_y][map_x];
       if (c == '#') {
         hit = 1;
         break;
@@ -639,7 +836,16 @@ void draw_world() {
     }
     g_z[col] = (uint16_t)fminf(perp * 256.0f, 65534.0f);
 
-    float wall_x = (side == 0) ? (g_py + perp * ray_y) : (g_px + perp * ray_x);
+    const float hit_x = g_px + perp * ray_x;
+    const float hit_y = g_py + perp * ray_y;
+    float wall_base = floor_base_z();
+    if (hit_x >= 10.0f && hit_x <= 13.0f && (map_y == 10 || map_y == 12)) {
+      wall_base = (hit_x - 10.0f) * 0.25f;
+    } else if (g_floor == 0 && hit_x >= 14.0f && hit_y >= 11.0f && hit_y < 12.0f) {
+      wall_base = 0.75f;
+    }
+
+    float wall_x = (side == 0) ? hit_y : hit_x;
     wall_x -= floorf(wall_x);
     int tex_x = (int)(wall_x * 16.0f);
     if (side == 0 && ray_x > 0.0f) {
@@ -659,16 +865,18 @@ void draw_world() {
       ++shade;
     }
 
-    const int horizon = kHorizon + g_bob;
     const int line_h = (int)((float)kViewH / perp);
-    const int y_start = horizon - line_h / 2;
-    const int y_end = y_start + line_h;
+    const int horizon = camera_horizon();
+    const float local_eye_z = camera_z() - wall_base;
+    const int y_start = horizon + (int)((local_eye_z - 1.0f) * (float)line_h);
+    const int y_end = horizon + (int)(local_eye_z * (float)line_h);
     dither_column(buf, col, 0, y_start);
     dither_column(buf, col, y_end, kViewH);
 
     paint_tex(buf, col, y_start, y_end, y_start, line_h, kTexWall, tex_x, shade);
   }
 
+  draw_ramp_surface(buf);
   g_bill_n = 0;
   const uint32_t now = millis();
   const float bob = sinf((float)now * 0.006f) * 0.05f;
@@ -835,6 +1043,29 @@ void try_move(float dx, float dy) {
   if (stuck || !player_blocked(g_px, g_py + dy)) {
     g_py += dy;
   }
+}
+
+bool use_ramp_if_entered(int old_x, int old_y) {
+  const int new_x = (int)floorf(g_px);
+  const int new_y = (int)floorf(g_py);
+  const char cell = raw_at(new_x, new_y);
+  const bool ramp_end = g_floor == 0
+                            ? cell == '^'
+                            : (old_x == 10 && new_x == 9 && new_y == 11);
+  if (!ramp_end || (old_x == new_x && old_y == new_y)) {
+    return false;
+  }
+
+  save_floor_state();
+  g_floor = (uint8_t)((g_floor + 1) % kFloorCount);
+  // Floor two joins the top of the ramp; the return trip lands at its foot.
+  g_px = g_floor == 0 ? 9.5f : 13.5f;
+  g_py = 11.5f;
+  memset(g_shots, 0, sizeof g_shots);
+  load_floor_state();
+  aim();
+  say(g_floor == 0 ? "RAMP DOWN - FLOOR 1" : "RAMP UP - FLOOR 2", 1600);
+  return true;
 }
 
 bool enemy_blocked(int self, float x, float y) {
@@ -1165,14 +1396,20 @@ void game_step(const Input &input) {
   }
   aim();
   const float step = forward * 2.15f * dt;
+  const int old_cell_x = (int)floorf(g_px);
+  const int old_cell_y = (int)floorf(g_py);
   try_move(g_dir_x * step, g_dir_y * step);
+  if (use_ramp_if_entered(old_cell_x, old_cell_y)) {
+    return;
+  }
   if (fabsf(forward) > 0.12f) {
     g_bob_phase += dt * 12.0f * fabsf(forward);
   }
   g_bob = (int)(sinf(g_bob_phase) * 2.0f);
 
   take_pickups();
-  if (g_exit_x >= 0 && (int)floorf(g_px) == g_exit_x && (int)floorf(g_py) == g_exit_y) {
+  if (g_floor == kFloorCount - 1 && g_exit_x >= 0 &&
+      (int)floorf(g_px) == g_exit_x && (int)floorf(g_py) == g_exit_y) {
     g_mode = Mode::Won;
     return;
   }
