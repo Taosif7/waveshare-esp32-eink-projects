@@ -42,6 +42,7 @@ struct Enemy {
   uint32_t next_act;
   uint32_t saw_until;
   uint32_t flash_until;
+  uint32_t attack_until;
   Kind kind;
   bool alive;
 };
@@ -177,6 +178,8 @@ void check_art() {
   const bool ok = art_width(kTexBrick, 16, 16) && art_width(kTexTech, 16, 16) &&
                   art_width(kTexRib, 16, 16) && art_width(kTexSupport, 16, 16) &&
                   art_width(kSprGuard, 16, 16) && art_width(kSprBeast, 16, 16) &&
+                  art_width(kSprGuardWalk, 16, 16) && art_width(kSprGuardAttack, 16, 16) &&
+                  art_width(kSprBeastWalk, 16, 16) && art_width(kSprBeastAttack, 16, 16) &&
                   art_width(kSprCorpse, 16, 16) && art_width(kSprPistol, 16, 16) &&
                   art_width(kSprShotgun, 16, 16) &&
                   art_width(kSprAmmo, 8, 8) && art_width(kSprMed, 8, 8) &&
@@ -376,6 +379,9 @@ void dither_column(uint8_t *buf, int x, int y0, int y1) {
 
 void paint_tex(uint8_t *buf, int x, int y0, int y1, int span0, int span_h,
                const char *const *tex, int tex_x, int shade) {
+  static const uint8_t kBayer4x4[16] = {
+      0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5,
+  };
   if (span_h < 1) {
     return;
   }
@@ -391,6 +397,7 @@ void paint_tex(uint8_t *buf, int x, int y0, int y1, int span0, int span_h,
   if (tex_x > 15) {
     tex_x = 15;
   }
+  const uint8_t threshold = (shade >= 2) ? 12 : ((shade == 1) ? 8 : 0);
   for (int y = y0; y < y1; ++y) {
     int ty = (y - span0) * 16 / span_h;
     if (ty < 0) {
@@ -402,10 +409,8 @@ void paint_tex(uint8_t *buf, int x, int y0, int y1, int span0, int span_h,
     if (tex[ty][tex_x] != '#') {
       continue;
     }
-    if (shade == 1 && ((x ^ y) & 1)) {
-      continue;
-    }
-    if (shade >= 2 && ((x + y) & 3)) {
+    const uint8_t rank = kBayer4x4[(y & 3) * 4 + (x & 3)];
+    if (rank < threshold) {
       continue;
     }
     pixel(buf, x, y, true);
@@ -649,10 +654,17 @@ void draw_world() {
     const bool flash = e.alive && now < e.flash_until;
     if (!e.alive) {
       add_bill(e.x, e.y, kSprCorpse, 16, 16, 88, false);
-    } else if (e.kind == kBeast) {
-      add_bill(e.x, e.y, kSprBeast, 16, 16, 96, flash);
     } else {
-      add_bill(e.x, e.y, kSprGuard, 16, 16, 80, flash);
+      const bool attacking = now < e.attack_until;
+      const bool walking = now < e.saw_until && ((now / 220u + (uint32_t)i) & 1u);
+      const char *const *rows;
+      if (e.kind == kBeast) {
+        rows = attacking ? kSprBeastAttack : (walking ? kSprBeastWalk : kSprBeast);
+        add_bill(e.x, e.y, rows, 16, 16, 96, flash);
+      } else {
+        rows = attacking ? kSprGuardAttack : (walking ? kSprGuardWalk : kSprGuard);
+        add_bill(e.x, e.y, rows, 16, 16, 80, flash);
+      }
     }
   }
   for (int i = 0; i < g_pickup_n; ++i) {
@@ -697,16 +709,17 @@ void draw_world() {
   const int gun_y = kViewH - 16 - g_kick + g_bob / 2;
   stamp(buf, gun, 16, 16, 56, gun_y);
   if (now < g_flash_until) {
-    const int mx = 64;
-    const int my = gun_y + 5;
-    pixel(buf, mx, my, true);
-    pixel(buf, mx - 1, my, true);
-    pixel(buf, mx + 1, my, true);
-    pixel(buf, mx, my - 1, true);
-    pixel(buf, mx, my - 2, true);
-    if (gun == kSprShotgun) {
-      pixel(buf, mx - 3, my, true);
-      pixel(buf, mx + 3, my, true);
+    static const char *const kMuzzleFlash[] = {
+        "...#...", "..###..", ".#####.", "###.###", ".#####.", "..###..", "...#...",
+    };
+    const int flash_x = 61;
+    const int flash_y = gun_y - 2;
+    for (int row = 0; row < 7; ++row) {
+      for (int col = 0; col < 7; ++col) {
+        if (kMuzzleFlash[row][col] == '#') {
+          pixel(buf, flash_x + col, flash_y + row, true);
+        }
+      }
     }
   }
 
@@ -1035,7 +1048,7 @@ void think_enemies(uint32_t now, float dt) {
       if (see && pdist < 5.0f && pdist > 1.3f && now >= e.next_act && !shot_from(i)) {
         spawn_shot(i, e.x, e.y, pdx, pdy, pdist);
         e.next_act = now + 1100;
-        e.flash_until = now + 120;
+        e.attack_until = now + 180;
       }
     } else if (hunt) {
       const float dx = (see ? g_px : e.lx) - e.x;
@@ -1044,7 +1057,7 @@ void think_enemies(uint32_t now, float dt) {
       if (see && pdist < 0.75f && now >= e.next_act) {
         hurt(15);
         e.next_act = now + 700;
-        e.flash_until = now + 140;
+        e.attack_until = now + 180;
       }
     }
   }
@@ -1057,7 +1070,8 @@ void player_fire(uint32_t now, const Input &input) {
   if (!input.fire_held || now < g_next_shot || g_mode != Mode::Play) {
     return;
   }
-  if (g_shotgun && g_ammo >= 2) {
+  const bool shotgun_shot = g_shotgun && g_ammo >= 2;
+  if (shotgun_shot) {
     const float spread[] = {-0.18f, -0.09f, 0.0f, 0.09f, 0.18f};
     for (float s : spread) {
       const int hit = hitscan(g_ang + s, 0.16f);
@@ -1081,8 +1095,8 @@ void player_fire(uint32_t now, const Input &input) {
     g_next_shot = now + 250;
     return;
   }
-  g_kick = 6;
-  g_flash_until = now + 70;
+  g_kick = shotgun_shot ? 9 : 6;
+  g_flash_until = now + 80;
 }
 
 }  // namespace
