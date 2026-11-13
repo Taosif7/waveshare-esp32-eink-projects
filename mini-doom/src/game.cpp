@@ -288,9 +288,45 @@ void text_center(int y, const char *s) {
   oled.drawStr(x, y, s);
 }
 
+bool title_logo_pixel(int x, int y) {
+  if (x < 0 || x >= 112 || y < 0 || y >= 48) {
+    return false;
+  }
+  const uint8_t packed = kTitleLogo[y * 14 + x / 8];
+  return (packed & (1u << (x & 7))) != 0;
+}
+
+void draw_gradient_logo() {
+  constexpr int kLogoX = 8;
+  constexpr int kLogoY = 2;
+  for (int y = 0; y < 48; ++y) {
+    // Ordered dithering fades the logo's interior from clear at the top to
+    // fully filled at the bottom. Its silhouette stays crisp and solid.
+    const int fill_level = (y * 16) / 47;
+    for (int x = 0; x < 112; ++x) {
+      if (!title_logo_pixel(x, y)) {
+        continue;
+      }
+      bool border = false;
+      for (int dy = -1; dy <= 1 && !border; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+          if ((dx != 0 || dy != 0) && !title_logo_pixel(x + dx, y + dy)) {
+            border = true;
+            break;
+          }
+        }
+      }
+      const uint8_t rank = kBayer4x4[(y & 3) * 4 + (x & 3)];
+      if (border || rank < fill_level) {
+        oled.drawPixel(kLogoX + x, kLogoY + y);
+      }
+    }
+  }
+}
+
 void draw_title() {
   oled.clearBuffer();
-  oled.drawXBMP(8, 2, 112, 48, kTitleLogo);
+  draw_gradient_logo();
   text_center(51, "EPISODE 1  /  ENTRY");
   text_center(57, "PRESS FIRE TO START");
   oled.sendBuffer();
