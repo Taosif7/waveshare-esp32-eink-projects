@@ -2,6 +2,7 @@
 
 #include "art.h"
 #include "oled.h"
+#include "title_logo.h"
 
 #include <Arduino.h>
 #include <math.h>
@@ -18,17 +19,16 @@ constexpr int kHorizon = 22;
 constexpr float kPlane = 0.80f;
 constexpr float kTau = 6.2831853f;
 constexpr int kMaxEnemy = 8;
-constexpr int kMaxDoor = 8;
 constexpr int kMaxPickup = 12;
 constexpr int kMaxShot = 6;
 
 // +Y is south, so the rows below read the way they are drawn. Angle 0 faces east.
-// The red door is the only way into the exit row.
+// Open, winding corridors lead from the start to the exit.
 const char *const kMap[kMapH] = {
-    "################", "#@..a..........#", "####d###########", "#..............#",
-    "#..e....####...#", "#.......#k#....#", "#..####.#.#..h.#", "#.a#....#.#....#",
-    "#..#.m..d.d....#", "#..#....#.#..g.#", "#..######.#....#", "#e........#..v.#",
-    "######r#########", "#..............#", "#.....x........#", "################",
+    "################", "###@.###########", "####.###########", "####.###########",
+    "####....a.######", "#######e#.######", "#######...######", "#a........######",
+    "#####.##########", "#####hm#########", "#####.##########", "###v..........x#",
+    "################", "################", "################", "################",
 };
 
 enum Kind : uint8_t { kGuard, kBeast };
@@ -44,15 +44,6 @@ struct Enemy {
   uint32_t flash_until;
   Kind kind;
   bool alive;
-};
-
-struct Door {
-  uint8_t x;
-  uint8_t y;
-  uint8_t open;
-  int8_t vel;
-  bool red;
-  uint32_t hold_until;
 };
 
 struct Pickup {
@@ -99,7 +90,6 @@ int g_kick = 0;
 int g_hp = 100;
 int g_armor = 0;
 int g_ammo = 24;
-bool g_key = false;
 bool g_shotgun = false;
 int g_exit_x = -1;
 int g_exit_y = -1;
@@ -112,9 +102,6 @@ char g_banner[16] = "";
 
 Enemy g_enemies[kMaxEnemy];
 int g_enemy_n = 0;
-Door g_doors[kMaxDoor];
-int g_door_n = 0;
-uint8_t g_door_at[kMapH][kMapW];
 Pickup g_pickups[kMaxPickup];
 int g_pickup_n = 0;
 Shot g_shots[kMaxShot];
@@ -144,18 +131,7 @@ char raw_at(int x, int y) {
 }
 
 bool block_ray(int x, int y) {
-  const char c = raw_at(x, y);
-  if (c == '#') {
-    return true;
-  }
-  if (c == 'd' || c == 'r') {
-    const uint8_t id = g_door_at[y][x];
-    if (id == 0xFF) {
-      return true;
-    }
-    return g_doors[id].open < 230;
-  }
-  return false;
+  return raw_at(x, y) == '#';
 }
 
 bool block_body(float x, float y) {
@@ -165,15 +141,8 @@ bool block_body(float x, float y) {
   for (int i = 0; i < 4; ++i) {
     const int cx = (int)floorf(px[i]);
     const int cy = (int)floorf(py[i]);
-    const char c = raw_at(cx, cy);
-    if (c == '#') {
+    if (raw_at(cx, cy) == '#') {
       return true;
-    }
-    if (c == 'd' || c == 'r') {
-      const uint8_t id = g_door_at[cy][cx];
-      if (id == 0xFF || g_doors[id].open < 120) {
-        return true;
-      }
     }
   }
   return false;
@@ -207,10 +176,9 @@ bool art_width(const char *const *rows, int n, int w) {
 void check_art() {
   const bool ok = art_width(kTexBrick, 16, 16) && art_width(kTexTech, 16, 16) &&
                   art_width(kTexRib, 16, 16) && art_width(kTexSupport, 16, 16) &&
-                  art_width(kTexDoor, 16, 16) && art_width(kTexRed, 16, 16) &&
                   art_width(kSprGuard, 16, 16) && art_width(kSprBeast, 16, 16) &&
                   art_width(kSprCorpse, 16, 16) && art_width(kSprPistol, 16, 16) &&
-                  art_width(kSprShotgun, 16, 16) && art_width(kSprKey, 8, 8) &&
+                  art_width(kSprShotgun, 16, 16) &&
                   art_width(kSprAmmo, 8, 8) && art_width(kSprMed, 8, 8) &&
                   art_width(kSprArmor, 8, 8) && art_width(kSprGun, 8, 8) &&
                   art_width(kSprExit, 8, 8) && art_width(kSprBolt, 5, 5);
@@ -221,16 +189,13 @@ void check_art() {
 
 void begin_level() {
   g_enemy_n = 0;
-  g_door_n = 0;
   g_pickup_n = 0;
   g_exit_x = -1;
   g_exit_y = -1;
-  memset(g_door_at, 0xFF, sizeof g_door_at);
   memset(g_shots, 0, sizeof g_shots);
   g_hp = 100;
   g_armor = 0;
   g_ammo = 24;
-  g_key = false;
   g_shotgun = false;
   g_ang = 0;
   g_bob = 0;
@@ -266,15 +231,7 @@ void begin_level() {
         e.alive = true;
         e.next_act = millis() + (uint32_t)g_enemy_n * 350u;
         ++g_enemy_n;
-      } else if ((c == 'd' || c == 'r') && g_door_n < kMaxDoor) {
-        Door &d = g_doors[g_door_n];
-        d = {};
-        d.x = (uint8_t)x;
-        d.y = (uint8_t)y;
-        d.red = (c == 'r');
-        g_door_at[y][x] = (uint8_t)g_door_n;
-        ++g_door_n;
-      } else if ((c == 'a' || c == 'h' || c == 'v' || c == 'g' || c == 'k') &&
+      } else if ((c == 'a' || c == 'h' || c == 'v' || c == 'g') &&
                  g_pickup_n < kMaxPickup) {
         Pickup &p = g_pickups[g_pickup_n];
         p.x = cx;
@@ -291,7 +248,7 @@ void begin_level() {
 
   g_mode = Mode::Play;
   aim();
-  Serial.printf("entry: %d enemies, %d doors\n", g_enemy_n, g_door_n);
+  Serial.printf("entry: %d enemies\n", g_enemy_n);
 }
 
 void pixel(uint8_t *buf, int x, int y, bool on) {
@@ -307,6 +264,16 @@ void pixel(uint8_t *buf, int x, int y, bool on) {
   }
 }
 
+void draw_hud_icon(uint8_t *buf, int x, int y, const char *const *rows) {
+  for (int row = 0; row < 7; ++row) {
+    for (int col = 0; col < 7; ++col) {
+      if (rows[row][col] == '#') {
+        pixel(buf, x + col, y + row, true);
+      }
+    }
+  }
+}
+
 void text_center(int y, const char *s) {
   const int w = oled.getStrWidth(s);
   int x = (128 - w) / 2;
@@ -318,12 +285,9 @@ void text_center(int y, const char *s) {
 
 void draw_title() {
   oled.clearBuffer();
-  text_center(2, "MINI DOOM");
-  text_center(14, "entry");
-  text_center(26, "stick moves");
-  text_center(35, "touch fires");
-  text_center(44, "click door/map");
-  text_center(54, "TOUCH START");
+  oled.drawXBMP(8, 2, 112, 48, kTitleLogo);
+  text_center(51, "EPISODE 1  /  ENTRY");
+  text_center(57, "PRESS FIRE TO START");
   oled.sendBuffer();
 }
 
@@ -347,12 +311,7 @@ void draw_map() {
       const int x0 = ox + x * kCell;
       const int y0 = oy + y * kCell;
       if (c == '#') {
-        fill_box(buf, x0, y0, 3, 3);
-      } else if (c == 'd' || c == 'r') {
-        const uint8_t id = g_door_at[y][x];
-        if (id != 0xFF && g_doors[id].open < 140) {
-          fill_box(buf, x0, y0 + 1, 3, 2);
-        }
+        fill_box(buf, x0, y0, kCell, kCell);
       }
     }
   }
@@ -363,9 +322,6 @@ void draw_map() {
     const int x = ox + (int)(g_pickups[i].x * kCell);
     const int y = oy + (int)(g_pickups[i].y * kCell);
     pixel(buf, x, y, true);
-    if (g_pickups[i].kind == 'k') {
-      pixel(buf, x + 1, y, true);
-    }
   }
   if (g_exit_x >= 0 && ((millis() / 200) & 1u) == 0) {
     pixel(buf, ox + g_exit_x * kCell + 1, oy + g_exit_y * kCell + 1, true);
@@ -389,7 +345,7 @@ void draw_map() {
   const int fy = (int)lroundf(sinf(g_ang));
   pixel(buf, px + fx, py + fy, true);
   oled.drawStr(1, 2, "MAP");
-  oled.drawStr(1, 54, "click");
+  oled.drawStr(1, 54, "SW TO CLOSE");
   oled.sendBuffer();
 }
 
@@ -618,7 +574,6 @@ void draw_world() {
 
     int side = 0;
     int hit = 0;
-    int door_i = -1;
     for (int n = 0; n < 48; ++n) {
       if (side_x < side_y) {
         side_x += delta_x;
@@ -637,14 +592,6 @@ void draw_world() {
       if (c == '#') {
         hit = 1;
         break;
-      }
-      if (c == 'd' || c == 'r') {
-        const uint8_t id = g_door_at[map_y][map_x];
-        if (id != 0xFF && g_doors[id].open < 230) {
-          hit = 2;
-          door_i = id;
-          break;
-        }
       }
     }
 
@@ -688,10 +635,7 @@ void draw_world() {
 
     const char *const *tex = kTexBrick;
     int vis_h = line_h;
-    if (hit == 2 && door_i >= 0) {
-      tex = g_doors[door_i].red ? kTexRed : kTexDoor;
-      vis_h = line_h * (255 - g_doors[door_i].open) / 255;
-    } else if (map_x >= 0 && map_y >= 0 && map_x < kMapW && map_y < kMapH) {
+    if (map_x >= 0 && map_y >= 0 && map_x < kMapW && map_y < kMapH) {
       tex = kWalls[(map_x * 3 + map_y) & 3];
     }
     paint_tex(buf, col, y_start, y_start + vis_h, y_start, line_h, tex, tex_x, shade);
@@ -722,8 +666,6 @@ void draw_world() {
       rows = kSprArmor;
     } else if (g_pickups[i].kind == 'g') {
       rows = kSprGun;
-    } else if (g_pickups[i].kind == 'k') {
-      rows = kSprKey;
     }
     add_bill(g_pickups[i].x, g_pickups[i].y + bob, rows, 8, 8, 40, false);
   }
@@ -786,7 +728,7 @@ void draw_world() {
       }
     }
     text_center(20, "YOU DIED");
-    text_center(32, "touch to retry");
+    text_center(32, "fire to retry");
   } else if (g_mode == Mode::Won) {
     for (int y = 16; y < 44; ++y) {
       for (int x = 10; x < 118; ++x) {
@@ -794,7 +736,7 @@ void draw_world() {
       }
     }
     text_center(20, "CLEARED");
-    text_center(32, "touch to run again");
+    text_center(32, "fire to run again");
   }
 
   if (now < g_pain_until) {
@@ -806,10 +748,28 @@ void draw_world() {
   for (int x = 0; x < 128; ++x) {
     pixel(buf, x, kViewH, true);
   }
-  char line[28];
+  static const char *const kHealthIcon[] = {
+      ".##.##.", "#######", "#######", ".#####.", "..###..", "...#...", ".......",
+  };
+  static const char *const kArmorIcon[] = {
+      "...#...", "..###..", ".#####.", "#######", ".#####.", "..###..", "...#...",
+  };
+  static const char *const kAmmoIcon[] = {
+      "..###..", "..###..", ".#####.", "#######", "..###..", "..###..", "..###..",
+  };
+  draw_hud_icon(buf, 2, kViewH + 1, kHealthIcon);
+  draw_hud_icon(buf, 42, kViewH + 1, kArmorIcon);
+  draw_hud_icon(buf, 83, kViewH + 1, kAmmoIcon);
+  char health[4];
+  char armor[4];
+  char ammo[5];
+  snprintf(health, sizeof health, "%3d", g_hp);
+  snprintf(armor, sizeof armor, "%3d", g_armor);
   const char weapon = (g_shotgun && g_ammo >= 2) ? 'S' : 'P';
-  snprintf(line, sizeof line, "H%3d A%3d %c%2d%s", g_hp, g_armor, weapon, g_ammo, g_key ? " K" : "");
-  oled.drawStr(0, kViewH + 1, line);
+  snprintf(ammo, sizeof ammo, "%c%02d", weapon, g_ammo);
+  oled.drawStr(11, kViewH + 1, health);
+  oled.drawStr(51, kViewH + 1, armor);
+  oled.drawStr(92, kViewH + 1, ammo);
   oled.sendBuffer();
 }
 
@@ -970,90 +930,6 @@ void spawn_shot(int owner, float x, float y, float dx, float dy, float dist) {
   }
 }
 
-bool cell_busy(int x, int y) {
-  if ((int)floorf(g_px) == x && (int)floorf(g_py) == y) {
-    return true;
-  }
-  for (int i = 0; i < g_enemy_n; ++i) {
-    if (!g_enemies[i].alive) {
-      continue;
-    }
-    if ((int)floorf(g_enemies[i].x) == x && (int)floorf(g_enemies[i].y) == y) {
-      return true;
-    }
-  }
-  return false;
-}
-
-void tick_doors(uint32_t now, float dt) {
-  int step = (int)(dt * 460.0f);
-  if (step < 1) {
-    step = 1;
-  }
-  for (int i = 0; i < g_door_n; ++i) {
-    Door &d = g_doors[i];
-    if (d.vel > 0) {
-      const int open = (int)d.open + step;
-      if (open >= 255) {
-        d.open = 255;
-        d.vel = 0;
-        d.hold_until = now + 2500;
-      } else {
-        d.open = (uint8_t)open;
-      }
-    } else if (d.vel < 0) {
-      const int open = (int)d.open - step;
-      if (open <= 0) {
-        d.open = 0;
-        d.vel = 0;
-      } else {
-        d.open = (uint8_t)open;
-      }
-    } else if (d.open == 255 && now >= d.hold_until && !cell_busy(d.x, d.y)) {
-      d.vel = -1;
-    }
-  }
-}
-
-Door *door_ahead() {
-  for (float dist = 0.3f; dist <= 0.95f; dist += 0.25f) {
-    const int x = (int)floorf(g_px + g_dir_x * dist);
-    const int y = (int)floorf(g_py + g_dir_y * dist);
-    if (x < 0 || y < 0 || x >= kMapW || y >= kMapH) {
-      continue;
-    }
-    const char c = kMap[y][x];
-    if (c != 'd' && c != 'r') {
-      continue;
-    }
-    const uint8_t id = g_door_at[y][x];
-    if (id != 0xFF) {
-      return &g_doors[id];
-    }
-  }
-  return nullptr;
-}
-
-void operate(Door &door) {
-  if (door.vel > 0) {
-    door.vel = -1;
-    return;
-  }
-  if (door.vel < 0) {
-    door.vel = 1;
-    return;
-  }
-  if (door.open == 0) {
-    if (door.red && !g_key) {
-      say("NEED KEY", 800);
-      return;
-    }
-    door.vel = 1;
-  } else {
-    door.vel = -1;
-  }
-}
-
 void take_pickups() {
   for (int i = 0; i < g_pickup_n; ++i) {
     Pickup &p = g_pickups[i];
@@ -1089,9 +965,6 @@ void take_pickups() {
       if (g_armor > 100) {
         g_armor = 100;
       }
-    } else if (p.kind == 'k') {
-      g_key = true;
-      say("RED KEY", 900);
     } else if (p.kind == 'g') {
       g_shotgun = true;
       g_ammo += 8;
@@ -1261,7 +1134,6 @@ void game_step(const Input &input) {
   }
   g_bob = (int)(sinf(g_bob_phase) * 2.0f);
 
-  tick_doors(now, dt);
   take_pickups();
   if (g_exit_x >= 0 && (int)floorf(g_px) == g_exit_x && (int)floorf(g_py) == g_exit_y) {
     g_mode = Mode::Won;
@@ -1277,11 +1149,7 @@ void game_step(const Input &input) {
   }
   player_fire(now, input);
   if (input.use_edge) {
-    if (Door *door = door_ahead()) {
-      operate(*door);
-    } else {
-      g_map = true;
-    }
+    g_map = true;
   }
 }
 

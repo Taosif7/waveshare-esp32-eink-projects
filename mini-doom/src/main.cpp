@@ -8,10 +8,6 @@
 #include "oled.h"
 #include "pins.h"
 
-#ifndef TOUCH_ACTIVE_HIGH
-#define TOUCH_ACTIVE_HIGH 1
-#endif
-
 namespace {
 
 constexpr int kJoyCenter = 2048;
@@ -30,16 +26,8 @@ Controls controls = {kJoyCenter, kJoyCenter, false, 0, 0};
 uint32_t seen_fire = 0;
 uint32_t seen_use = 0;
 
-bool touch_down() {
-#if TOUCH_ACTIVE_HIGH
-  return digitalRead(kTouchPin) == HIGH;
-#else
-  return digitalRead(kTouchPin) == LOW;
-#endif
-}
-
 bool fire_down() {
-  return touch_down() || digitalRead(kFirePin) == HIGH;
+  return digitalRead(kFirePin) == HIGH;
 }
 
 int shape_axis(int raw) {
@@ -62,16 +50,10 @@ int shape_axis(int raw) {
 
 void configure_controls() {
   gpio_reset_pin(static_cast<gpio_num_t>(kFirePin));
-  gpio_reset_pin(static_cast<gpio_num_t>(kTouchPin));
   gpio_reset_pin(static_cast<gpio_num_t>(kJoyXPin));
   gpio_reset_pin(static_cast<gpio_num_t>(kJoyYPin));
   gpio_reset_pin(static_cast<gpio_num_t>(kJoySwPin));
   pinMode(kFirePin, INPUT_PULLDOWN);
-#if TOUCH_ACTIVE_HIGH
-  pinMode(kTouchPin, INPUT_PULLDOWN);
-#else
-  pinMode(kTouchPin, INPUT_PULLUP);
-#endif
   pinMode(kJoyXPin, INPUT);
   pinMode(kJoyYPin, INPUT);
   pinMode(kJoySwPin, INPUT_PULLUP);
@@ -153,7 +135,7 @@ void setup() {
   }
 
   game_setup();
-  Serial.println("Stick moves (low Y is forward). Touch on GPIO4 fires. Click uses doors, or the map.");
+  Serial.println("Stick moves (low Y is forward). Button on GPIO4 fires. Stick click toggles the map.");
 }
 
 void loop() {

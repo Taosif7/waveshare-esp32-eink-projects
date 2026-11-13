@@ -3,8 +3,8 @@
 #include <stdint.h>
 
 // Shaped stick axes are about -1400..1400. On this module low Y counts are
-// forward, so a negative axis_y means walk forward. Touch (or the optional
-// button) is fire. Stick click is use.
+// forward, so a negative axis_y means walk forward. The GPIO4 button fires;
+// stick click toggles the map.
 
 struct Input {
   int16_t axis_x;
