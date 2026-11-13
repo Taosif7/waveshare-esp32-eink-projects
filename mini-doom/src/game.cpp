@@ -127,7 +127,6 @@ int g_saved_exit_x[kFloorCount] = {-1, -1};
 int g_saved_exit_y[kFloorCount] = {-1, -1};
 bool g_floor_loaded[kFloorCount] = {};
 uint16_t g_z[kViewW];
-uint16_t g_ramp_invz[kViewH][kViewW];
 Bill g_bills[24];
 int g_bill_n = 0;
 
@@ -536,6 +535,12 @@ void draw_ramp_surface(uint8_t *buf) {
     float inv_depth;
   };
 
+  const float ramp_dx = g_px - 11.5f;
+  const float ramp_dy = g_py - 11.5f;
+  if (ramp_dx * ramp_dx + ramp_dy * ramp_dy > 49.0f) {
+    return;
+  }
+
   // Transform the ramp's four corners into camera space, then clip at the
   // near plane so the mesh remains valid when the player is on the incline.
   constexpr float kNear = 0.12f;
@@ -592,10 +597,8 @@ void draw_ramp_surface(uint8_t *buf) {
   for (int x = 0; x < kViewW; ++x) {
     wall_inv[x] = g_z[x] == 65535 ? 0.0f : 256.0f / (float)g_z[x];
   }
-  memset(g_ramp_invz, 0, sizeof g_ramp_invz);
-
-  // Fan-triangulate the clipped quad and rasterize it with reciprocal-depth
-  // interpolation. Tread bands and the pixel dither make the incline legible.
+  // Fan-triangulate the clipped quad and rasterize it at native resolution.
+  // The near-distance cull keeps this smooth mesh inexpensive on the ESP32-C3.
   for (int tri = 1; tri + 1 < clipped_n; ++tri) {
     const ScreenVertex &a = screen[0];
     const ScreenVertex &b = screen[tri];
@@ -628,7 +631,6 @@ void draw_ramp_surface(uint8_t *buf) {
         if (inv_depth <= wall_inv[x]) {
           continue;
         }
-        g_ramp_invz[y][x] = (uint16_t)fminf(inv_depth * 4096.0f, 65534.0f);
         const uint8_t rank = kBayer4x4[(y & 3) * 4 + (x & 3)];
         const bool tread_groove = (y & 3) == 0;
         pixel(buf, x, y, tread_groove ? rank < 3 : rank < 12);
@@ -695,7 +697,6 @@ void draw_bill(uint8_t *buf, const Bill &b) {
   const int top = bottom - sprite_h;
   const int left = (int)(kViewW * 0.5f * (1.0f + tx / ty)) - sprite_w / 2;
   const uint16_t sz = (uint16_t)fminf(ty * 256.0f, 65535.0f);
-  const uint16_t sprite_invz = sz == 0 ? 65535 : (uint16_t)(1048576UL / sz);
   for (int sx = 0; sx < sprite_w; ++sx) {
     const int x = left + sx;
     if (x < 0 || x >= kViewW || sz >= g_z[x]) {
@@ -708,9 +709,6 @@ void draw_bill(uint8_t *buf, const Bill &b) {
     for (int sy = 0; sy < sprite_h; ++sy) {
       const int y = top + sy;
       if (y < 0 || y >= kViewH) {
-        continue;
-      }
-      if (sprite_invz <= g_ramp_invz[y][x]) {
         continue;
       }
       if (b.flash) {
@@ -889,9 +887,16 @@ void draw_world() {
       const bool attacking = now < e.attack_until;
       const bool walking = now < e.saw_until && ((now / 220u + (uint32_t)i) & 1u);
       const char *const *rows;
+      int sprite_w = 16;
       if (e.kind == kBeast) {
-        rows = attacking ? kSprBeastAttack : (walking ? kSprBeastWalk : kSprBeast);
-        add_bill(e.x, e.y, rows, 16, 16, 96, flash);
+        if (attacking) {
+          rows = kSprBeastAttack;
+        } else if (walking) {
+          rows = kSprBeastWalk;
+        } else {
+          rows = kSprBeast;
+        }
+        add_bill(e.x, e.y, rows, sprite_w, 16, 96, flash);
       } else {
         rows = attacking ? kSprGuardAttack : (walking ? kSprGuardWalk : kSprGuard);
         add_bill(e.x, e.y, rows, 16, 16, 80, flash);
