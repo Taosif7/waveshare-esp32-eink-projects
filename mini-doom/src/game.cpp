@@ -21,6 +21,9 @@ constexpr float kTau = 6.2831853f;
 constexpr int kMaxEnemy = 8;
 constexpr int kMaxPickup = 12;
 constexpr int kMaxShot = 6;
+constexpr uint8_t kBayer4x4[16] = {
+    0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5,
+};
 
 // +Y is south, so the rows below read the way they are drawn. Angle 0 faces east.
 // Open, winding corridors lead from the start to the exit.
@@ -175,8 +178,7 @@ bool art_width(const char *const *rows, int n, int w) {
 }
 
 void check_art() {
-  const bool ok = art_width(kTexBrick, 16, 16) && art_width(kTexTech, 16, 16) &&
-                  art_width(kTexRib, 16, 16) && art_width(kTexSupport, 16, 16) &&
+  const bool ok = art_width(kTexWall, 16, 16) &&
                   art_width(kSprGuard, 16, 16) && art_width(kSprBeast, 16, 16) &&
                   art_width(kSprGuardWalk, 16, 16) && art_width(kSprGuardAttack, 16, 16) &&
                   art_width(kSprBeastWalk, 16, 16) && art_width(kSprBeastAttack, 16, 16) &&
@@ -361,17 +363,10 @@ void dither_column(uint8_t *buf, int x, int y0, int y1) {
   }
   const int horizon = kHorizon + g_bob;
   for (int y = y0; y < y1; ++y) {
-    int band = y - horizon;
-    if (band < 0) {
-      band = -band;
-    }
-    int step = 5;
-    if (band > 18) {
-      step = 2;
-    } else if (band > 9) {
-      step = 3;
-    }
-    if (((x * 3 + y) % step) == 0) {
+    const int band = y < horizon ? horizon - y : y - horizon;
+    const uint8_t threshold = band > 18 ? 8 : (band > 9 ? 5 : 3);
+    const uint8_t rank = kBayer4x4[(y & 3) * 4 + (x & 3)];
+    if (rank < threshold) {
       pixel(buf, x, y, true);
     }
   }
@@ -379,9 +374,6 @@ void dither_column(uint8_t *buf, int x, int y0, int y1) {
 
 void paint_tex(uint8_t *buf, int x, int y0, int y1, int span0, int span_h,
                const char *const *tex, int tex_x, int shade) {
-  static const uint8_t kBayer4x4[16] = {
-      0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5,
-  };
   if (span_h < 1) {
     return;
   }
@@ -638,12 +630,7 @@ void draw_world() {
     dither_column(buf, col, 0, y_start);
     dither_column(buf, col, y_end, kViewH);
 
-    const char *const *tex = kTexBrick;
-    int vis_h = line_h;
-    if (map_x >= 0 && map_y >= 0 && map_x < kMapW && map_y < kMapH) {
-      tex = kWalls[(map_x * 3 + map_y) & 3];
-    }
-    paint_tex(buf, col, y_start, y_start + vis_h, y_start, line_h, tex, tex_x, shade);
+    paint_tex(buf, col, y_start, y_end, y_start, line_h, kTexWall, tex_x, shade);
   }
 
   g_bill_n = 0;
