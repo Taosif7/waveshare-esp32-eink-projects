@@ -13,7 +13,7 @@ namespace {
 
 constexpr int kMapW = 16;
 constexpr int kMapH = 16;
-constexpr int kFloorCount = 2;
+constexpr int kLevelCount = 5;
 constexpr int kViewW = 128;
 constexpr int kViewH = 56;
 constexpr int kHorizon = 22;
@@ -26,21 +26,129 @@ constexpr uint8_t kBayer4x4[16] = {
     0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5,
 };
 
-// +Y is south, so the rows below read the way they are drawn. Angle 0 faces east.
-// Open, winding corridors lead from the start to the exit.
-const char *const kMaps[kFloorCount][kMapH] = {
+// One byte per cell. Reserve 0x10-0x1F for wall materials, 0x20-0x2F for
+// ramps, 0x30-0x3F for actors, 0x40-0x4F for pickups, and 0x50-0x5F for exits.
+enum MapCell : uint8_t {
+  kCellFloor = 0x00,
+  kCellBrickWall = 0x10,
+  kCellRamp = 0x20,
+  kCellRampExit = 0x21,
+  kCellPlayerStart = 0x30,
+  kCellGuardSpawn = 0x31,
+  kCellDemonSpawn = 0x32,
+  kCellAmmo = 0x40,
+  kCellMedkit = 0x41,
+  kCellArmor = 0x42,
+  kCellShotgun = 0x43,
+  kCellExit = 0x50,
+};
+
+struct LevelDef {
+  const uint8_t (*cells)[kMapW];
+  float start_angle;
+  const char *name;
+};
+
+// Row-major byte maps; comments show the original character-grid layout.
+// +Y points south and a start angle of zero faces east.
+const uint8_t kMapData[kLevelCount][kMapH][kMapW] = {
   {
-    "################", "###@.###########", "####.###########", "####.###########",
-    "####....a.######", "#######e#.######", "#######...######", "#a........######",
-    "#####.##########", "#####hm#########", "#####.##########", "###v......rrr^.#",
-    "################", "################", "################", "################",
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+    {0x10, 0x10, 0x10, 0x30, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ###@.###########
+    {0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ####.###########
+    {0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ####.###########
+    {0x10, 0x10, 0x10, 0x10, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ####....a.######
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x31, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // #######e#.######
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x00, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // #######...######
+    {0x10, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // #a........######
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // #####.##########
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x41, 0x32, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // #####hm#########
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // #####.##########
+    {0x10, 0x10, 0x10, 0x42, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x20, 0x20, 0x20, 0x21, 0x00, 0x10}, // ###v......rrr^.#
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
   },
   {
-    "################", "##x...##########", "#####.##########", "#####.##########",
-    "#####.##########", "#####.##########", "#####.##########", "##....e.........",
-    "###############.", "###############.", "###############.", "###...a...rrr^..",
-    "################", "################", "################", "################",
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+    {0x10, 0x10, 0x30, 0x00, 0x00, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ##@...##########
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // #####.##########
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10}, // #####....a.#####
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10}, // ##########.#####
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10}, // ##########.#####
+    {0x10, 0x00, 0x00, 0x00, 0x00, 0x31, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10}, // #....e.....#####
+    {0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ###.############
+    {0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ###.############
+    {0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ###.############
+    {0x10, 0x10, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x20, 0x20, 0x20, 0x21, 0x00, 0x10}, // ###.......rrr^.#
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
   },
+  {
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+    {0x10, 0x10, 0x30, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x10, 0x10}, // ##@..........###
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10}, // ############.###
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10}, // ############.###
+    {0x10, 0x10, 0x10, 0x10, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x10, 0x10, 0x10}, // ####....a....###
+    {0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ####.###########
+    {0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ####.###########
+    {0x10, 0x10, 0x10, 0x10, 0x00, 0x00, 0x00, 0x31, 0x00, 0x00, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10}, // ####...e...#####
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10}, // ##########.#####
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10}, // ##########.#####
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10}, // ##########.#####
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x20, 0x20, 0x20, 0x21, 0x00, 0x10}, // ##########rrr^.#
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+  },
+  {
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+    {0x10, 0x10, 0x30, 0x00, 0x00, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ##@...##########
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // #####.##########
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // #####.##########
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x41, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // #####.h.########
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // #######.########
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // #######.########
+    {0x10, 0x10, 0x00, 0x00, 0x00, 0x42, 0x00, 0x31, 0x00, 0x00, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10}, // ##...v.e...#####
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10}, // ##########.#####
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10}, // ##########.#####
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10}, // ##########.#####
+    {0x10, 0x10, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x20, 0x20, 0x20, 0x21, 0x00, 0x10}, // ###.......rrr^.#
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+  },
+  {
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+    {0x10, 0x10, 0x30, 0x00, 0x00, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ##@...##########
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // #####.##########
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // #####.##########
+    {0x10, 0x10, 0x10, 0x10, 0x00, 0x00, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ####...#########
+    {0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ####.###########
+    {0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ####.###########
+    {0x10, 0x10, 0x10, 0x10, 0x00, 0x00, 0x00, 0x31, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ####...e.#######
+    {0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ####.###########
+    {0x10, 0x10, 0x10, 0x10, 0x00, 0x00, 0x00, 0x00, 0x40, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ####....a#######
+    {0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ####.###########
+    {0x10, 0x10, 0x10, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x41, 0x00, 0x00, 0x00, 0x50, 0x10, 0x10}, // ####.....h...x##
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+  },
+};
+
+const LevelDef kLevels[kLevelCount] = {
+    {kMapData[0], 0.0f, "MAP 1"},
+    {kMapData[1], 0.0f, "MAP 2"},
+    {kMapData[2], 0.0f, "MAP 3"},
+    {kMapData[3], 0.0f, "MAP 4"},
+    {kMapData[4], 0.0f, "MAP 5"},
 };
 
 enum Kind : uint8_t { kGuard, kBeast };
@@ -90,7 +198,8 @@ enum class Mode : uint8_t { Title, Play, Dead, Won };
 
 Mode g_mode = Mode::Title;
 bool g_map = false;
-uint8_t g_floor = 0;
+uint8_t g_level = 0;
+bool g_has_ramp = false;
 float g_px = 1.5f;
 float g_py = 1.5f;
 float g_ang = 0;
@@ -119,13 +228,6 @@ int g_enemy_n = 0;
 Pickup g_pickups[kMaxPickup];
 int g_pickup_n = 0;
 Shot g_shots[kMaxShot];
-Enemy g_saved_enemies[kFloorCount][kMaxEnemy];
-Pickup g_saved_pickups[kFloorCount][kMaxPickup];
-int g_saved_enemy_n[kFloorCount] = {};
-int g_saved_pickup_n[kFloorCount] = {};
-int g_saved_exit_x[kFloorCount] = {-1, -1};
-int g_saved_exit_y[kFloorCount] = {-1, -1};
-bool g_floor_loaded[kFloorCount] = {};
 uint16_t g_z[kViewW];
 Bill g_bills[24];
 int g_bill_n = 0;
@@ -144,30 +246,27 @@ void aim() {
   g_plane_y = cosf(g_ang) * kPlane;
 }
 
-char raw_at(int x, int y) {
+uint8_t map_at(int x, int y) {
   if (x < 0 || y < 0 || x >= kMapW || y >= kMapH) {
-    return '#';
+    return kCellBrickWall;
   }
-  return kMaps[g_floor][y][x];
+  return kLevels[g_level].cells[y][x];
 }
 
 bool block_ray(int x, int y) {
-  return raw_at(x, y) == '#';
+  const uint8_t cell = map_at(x, y);
+  return cell >= 0x10 && cell <= 0x1F;
 }
 
 int camera_horizon() {
   return kHorizon + g_bob;
 }
 
-float floor_base_z() {
-  return g_floor == 0 ? 0.0f : 0.75f;
-}
-
 float camera_z() {
   const int x = (int)floorf(g_px);
   const int y = (int)floorf(g_py);
-  const char cell = raw_at(x, y);
-  if (cell == 'r' || (g_floor == 0 && cell == '^')) {
+  const uint8_t cell = map_at(x, y);
+  if (cell == kCellRamp || cell == kCellRampExit) {
     float progress = (g_px - 10.0f) / 3.0f;
     if (progress < 0.0f) {
       progress = 0.0f;
@@ -177,7 +276,7 @@ float camera_z() {
     }
     return 0.5f + progress * 0.75f;
   }
-  return floor_base_z() + 0.5f;
+  return 0.5f;
 }
 
 bool block_body(float x, float y) {
@@ -187,7 +286,7 @@ bool block_body(float x, float y) {
   for (int i = 0; i < 4; ++i) {
     const int cx = (int)floorf(px[i]);
     const int cy = (int)floorf(py[i]);
-    if (raw_at(cx, cy) == '#') {
+    if (block_ray(cx, cy)) {
       return true;
     }
   }
@@ -234,100 +333,85 @@ void check_art() {
   }
 }
 
-void save_floor_state() {
-  g_saved_enemy_n[g_floor] = g_enemy_n;
-  g_saved_pickup_n[g_floor] = g_pickup_n;
-  g_saved_exit_x[g_floor] = g_exit_x;
-  g_saved_exit_y[g_floor] = g_exit_y;
-  memcpy(g_saved_enemies[g_floor], g_enemies, sizeof g_enemies);
-  memcpy(g_saved_pickups[g_floor], g_pickups, sizeof g_pickups);
-  g_floor_loaded[g_floor] = true;
-}
-
-void load_floor_state() {
-  if (g_floor_loaded[g_floor]) {
-    g_enemy_n = g_saved_enemy_n[g_floor];
-    g_pickup_n = g_saved_pickup_n[g_floor];
-    g_exit_x = g_saved_exit_x[g_floor];
-    g_exit_y = g_saved_exit_y[g_floor];
-    memcpy(g_enemies, g_saved_enemies[g_floor], sizeof g_enemies);
-    memcpy(g_pickups, g_saved_pickups[g_floor], sizeof g_pickups);
+void load_level(uint8_t level) {
+  if (level >= kLevelCount) {
+    g_mode = Mode::Won;
     return;
   }
-
+  g_level = level;
+  g_map = false;
+  g_has_ramp = false;
   g_enemy_n = 0;
   g_pickup_n = 0;
   g_exit_x = -1;
   g_exit_y = -1;
+  memset(g_enemies, 0, sizeof g_enemies);
+  memset(g_pickups, 0, sizeof g_pickups);
+  memset(g_shots, 0, sizeof g_shots);
+  g_ang = kLevels[g_level].start_angle;
+  g_bob = 0;
+  g_bob_phase = 0;
+  g_kick = 0;
   const uint32_t now = millis();
   for (int y = 0; y < kMapH; ++y) {
     for (int x = 0; x < kMapW; ++x) {
-      const char c = kMaps[g_floor][y][x];
+      const uint8_t cell = kLevels[g_level].cells[y][x];
+      if (cell == kCellRamp || cell == kCellRampExit) {
+        g_has_ramp = true;
+      }
       const float cx = (float)x + 0.5f;
       const float cy = (float)y + 0.5f;
-      if (c == '@') {
+      if (cell == kCellPlayerStart) {
         g_px = cx;
         g_py = cy;
-      } else if ((c == 'e' || c == 'm') && g_enemy_n < kMaxEnemy) {
+      } else if ((cell == kCellGuardSpawn || cell == kCellDemonSpawn) &&
+                 g_enemy_n < kMaxEnemy) {
         Enemy &e = g_enemies[g_enemy_n];
         e = {};
         e.x = cx;
         e.y = cy;
         e.lx = cx;
         e.ly = cy;
-        e.kind = (c == 'm') ? kBeast : kGuard;
+        e.kind = (cell == kCellDemonSpawn) ? kBeast : kGuard;
         e.hp = (e.kind == kBeast) ? 64 : 30;
         e.alive = true;
         e.next_act = now + (uint32_t)g_enemy_n * 350u;
         ++g_enemy_n;
-      } else if ((c == 'a' || c == 'h' || c == 'v' || c == 'g') &&
+      } else if ((cell == kCellAmmo || cell == kCellMedkit ||
+                  cell == kCellArmor || cell == kCellShotgun) &&
                  g_pickup_n < kMaxPickup) {
         Pickup &p = g_pickups[g_pickup_n++];
         p.x = cx;
         p.y = cy;
-        p.kind = c;
+        p.kind = cell == kCellAmmo ? 'a' :
+                 cell == kCellMedkit ? 'h' :
+                 cell == kCellArmor ? 'v' : 'g';
         p.live = true;
-      } else if (c == 'x') {
+      } else if (cell == kCellExit) {
         g_exit_x = x;
         g_exit_y = y;
       }
     }
   }
-  save_floor_state();
+  g_next_shot = now + 400;
+  g_mode = Mode::Play;
+  aim();
+  Serial.printf("%s: %d enemies\n", kLevels[g_level].name, g_enemy_n);
 }
 
 void begin_level() {
-  memset(g_floor_loaded, 0, sizeof g_floor_loaded);
-  memset(g_saved_enemy_n, 0, sizeof g_saved_enemy_n);
-  memset(g_saved_pickup_n, 0, sizeof g_saved_pickup_n);
-  for (int i = 0; i < kFloorCount; ++i) {
-    g_saved_exit_x[i] = -1;
-    g_saved_exit_y[i] = -1;
-  }
-  memset(g_shots, 0, sizeof g_shots);
   g_hp = 100;
   g_armor = 0;
   g_ammo = 24;
   g_shotgun = false;
-  g_ang = 0;
-  g_bob = 0;
-  g_bob_phase = 0;
-  g_kick = 0;
-  g_map = false;
-  g_floor = 0;
   g_banner[0] = '\0';
   g_banner_until = 0;
   g_pain_until = 0;
   g_invuln = 0;
   g_flash_until = 0;
-  g_next_shot = millis() + 400;
   g_px = 1.5f;
   g_py = 1.5f;
-  load_floor_state();
-
-  g_mode = Mode::Play;
-  aim();
-  Serial.printf("entry: %d enemies\n", g_enemy_n);
+  load_level(0);
 }
 
 void pixel(uint8_t *buf, int x, int y, bool on) {
@@ -416,20 +500,41 @@ void fill_box(uint8_t *buf, int x0, int y0, int w, int h) {
 void draw_map() {
   oled.clearBuffer();
   uint8_t *buf = oled.getBufferPtr();
-  constexpr int kCell = 4;
-  const int ox = (128 - kMapW * kCell) / 2;
-  const int oy = (64 - kMapH * kCell) / 2;
+  constexpr int kCell = 3;
+  constexpr int kMapX = 40;
+  constexpr int kMapY = 8;
+  constexpr int kMapPixels = kMapW * kCell;
+
+  // Framed center map with compact status panels on either side.
+  for (int i = 0; i < kMapPixels + 2; ++i) {
+    pixel(buf, kMapX - 1 + i, kMapY - 1, true);
+    pixel(buf, kMapX - 1 + i, kMapY + kMapPixels, true);
+  }
+  for (int i = 0; i < kMapPixels + 2; ++i) {
+    pixel(buf, kMapX - 1, kMapY - 1 + i, true);
+    pixel(buf, kMapX + kMapPixels, kMapY - 1 + i, true);
+  }
+
   for (int y = 0; y < kMapH; ++y) {
     for (int x = 0; x < kMapW; ++x) {
-      const char c = kMaps[g_floor][y][x];
-      const int x0 = ox + x * kCell;
-      const int y0 = oy + y * kCell;
-      if (c == '#') {
+      const uint8_t cell = map_at(x, y);
+      const int x0 = kMapX + x * kCell;
+      const int y0 = kMapY + y * kCell;
+      if (cell >= 0x10 && cell <= 0x1F) {
         fill_box(buf, x0, y0, kCell, kCell);
-      } else if (c == '^' || c == 'r') {
+      } else if (cell == kCellRamp || cell == kCellRampExit) {
         for (int i = 0; i < kCell; ++i) {
           pixel(buf, x0 + i, y0 + kCell - 1 - i, true);
         }
+        if (cell == kCellRampExit) {
+          pixel(buf, x0 + 1, y0 + 1, true);
+        }
+      } else if (cell == kCellExit) {
+        pixel(buf, x0, y0, true);
+        pixel(buf, x0 + 2, y0, true);
+        pixel(buf, x0 + 1, y0 + 1, true);
+        pixel(buf, x0, y0 + 2, true);
+        pixel(buf, x0 + 2, y0 + 2, true);
       }
     }
   }
@@ -437,34 +542,66 @@ void draw_map() {
     if (!g_pickups[i].live) {
       continue;
     }
-    const int x = ox + (int)(g_pickups[i].x * kCell);
-    const int y = oy + (int)(g_pickups[i].y * kCell);
+    const int x = kMapX + (int)(g_pickups[i].x * kCell);
+    const int y = kMapY + (int)(g_pickups[i].y * kCell);
     pixel(buf, x, y, true);
   }
-  if (g_exit_x >= 0 && ((millis() / 200) & 1u) == 0) {
-    pixel(buf, ox + g_exit_x * kCell + 1, oy + g_exit_y * kCell + 1, true);
-  }
+  int alive_enemies = 0;
   for (int i = 0; i < g_enemy_n; ++i) {
     if (!g_enemies[i].alive) {
       continue;
     }
-    const int x = ox + (int)(g_enemies[i].x * kCell);
-    const int y = oy + (int)(g_enemies[i].y * kCell);
+    ++alive_enemies;
+    const int x = kMapX + (int)(g_enemies[i].x * kCell);
+    const int y = kMapY + (int)(g_enemies[i].y * kCell);
     if (g_enemies[i].kind == kBeast) {
-      fill_box(buf, x, y, 2, 2);
+      fill_box(buf, x - 1, y - 1, 3, 3);
     } else {
       pixel(buf, x, y, true);
     }
   }
-  const int px = ox + (int)(g_px * kCell);
-  const int py = oy + (int)(g_py * kCell);
-  pixel(buf, px, py, true);
-  const int fx = (int)lroundf(cosf(g_ang));
-  const int fy = (int)lroundf(sinf(g_ang));
-  pixel(buf, px + fx, py + fy, true);
-  oled.drawStr(1, 2, g_floor == 0 ? "FLOOR 1" : "FLOOR 2");
-  oled.drawStr(1, 13, g_floor == 0 ? "RAMP UP" : "RAMP DN");
-  oled.drawStr(1, 54, "SW TO CLOSE");
+  const int px = kMapX + (int)(g_px * kCell);
+  const int py = kMapY + (int)(g_py * kCell);
+  if (((millis() / 220) & 1u) == 0) {
+    pixel(buf, px, py, true);
+    const int fx = (int)lroundf(cosf(g_ang));
+    const int fy = (int)lroundf(sinf(g_ang));
+    pixel(buf, px + fx, py + fy, true);
+  }
+
+  char label[12];
+  snprintf(label, sizeof label, "MAP %u/5", (unsigned)(g_level + 1));
+  oled.drawStr(2, 0, label);
+  oled.drawStr(80, 0, "SW CLOSE");
+
+  oled.drawStr(2, 10, "YOU");
+  pixel(buf, 3, 21, true);
+  pixel(buf, 4, 21, true);
+  char enemy_label[8];
+  snprintf(enemy_label, sizeof enemy_label, "EN %02d", alive_enemies);
+  oled.drawStr(2, 29, enemy_label);
+  oled.drawStr(2, 41, "GOAL");
+  oled.drawStr(2, 50, g_level == kLevelCount - 1 ? "EXIT" :
+                       (g_has_ramp ? "RAMP" : "EXIT"));
+
+  oled.drawStr(94, 10, "HP");
+  for (int x = 0; x < 30; ++x) {
+    pixel(buf, 94 + x, 19, true);
+    pixel(buf, 94 + x, 23, true);
+  }
+  for (int y = 19; y <= 23; ++y) {
+    pixel(buf, 94, y, true);
+    pixel(buf, 123, y, true);
+  }
+  const int hp_fill = (g_hp * 26) / 100;
+  fill_box(buf, 96, 21, hp_fill, 1);
+  char stat[8];
+  snprintf(stat, sizeof stat, "%3d", g_hp);
+  oled.drawStr(94, 26, stat);
+  snprintf(stat, sizeof stat, "AM %02d", g_ammo);
+  oled.drawStr(94, 36, stat);
+  snprintf(stat, sizeof stat, "AR %02d", g_armor);
+  oled.drawStr(94, 47, stat);
   oled.sendBuffer();
 }
 
@@ -477,10 +614,14 @@ void dither_column(uint8_t *buf, int x, int y0, int y1) {
   }
   const int horizon = camera_horizon();
   for (int y = y0; y < y1; ++y) {
-    const int band = y < horizon ? horizon - y : y - horizon;
-    const uint8_t threshold = band > 18 ? 8 : (band > 9 ? 5 : 3);
+    const bool floor = y >= horizon;
+    const int band = floor ? y - horizon : horizon - y;
+    const uint8_t threshold = floor
+        ? (band > 24 ? 13 : (band > 14 ? 10 : (band > 6 ? 7 : 4)))
+        : (band > 18 ? 8 : (band > 9 ? 5 : 3));
     const uint8_t rank = kBayer4x4[(y & 3) * 4 + (x & 3)];
-    if (rank < threshold) {
+    const bool floor_seam = floor && band > 5 && (band % 8 == 0) && ((x & 3) != 0);
+    if (rank < threshold || floor_seam) {
       pixel(buf, x, y, true);
     }
   }
@@ -524,6 +665,9 @@ void paint_tex(uint8_t *buf, int x, int y0, int y1, int span0, int span_h,
 }
 
 void draw_ramp_surface(uint8_t *buf) {
+  if (!g_has_ramp) {
+    return;
+  }
   struct Vertex {
     float side;
     float depth;
@@ -692,7 +836,7 @@ void draw_bill(uint8_t *buf, const Bill &b) {
     sprite_w = 1;
   }
   const int horizon = camera_horizon();
-  const float local_eye_z = camera_z() - floor_base_z();
+  const float local_eye_z = camera_z();
   const int bottom = horizon + (int)(local_eye_z * (float)column_h);
   const int top = bottom - sprite_h;
   const int left = (int)(kViewW * 0.5f * (1.0f + tx / ty)) - sprite_w / 2;
@@ -816,8 +960,8 @@ void draw_world() {
         hit = 1;
         break;
       }
-      const char c = kMaps[g_floor][map_y][map_x];
-      if (c == '#') {
+      const uint8_t cell = map_at(map_x, map_y);
+      if (cell >= 0x10 && cell <= 0x1F) {
         hit = 1;
         break;
       }
@@ -836,10 +980,11 @@ void draw_world() {
 
     const float hit_x = g_px + perp * ray_x;
     const float hit_y = g_py + perp * ray_y;
-    float wall_base = floor_base_z();
-    if (hit_x >= 10.0f && hit_x <= 13.0f && (map_y == 10 || map_y == 12)) {
+    float wall_base = 0.0f;
+    if (g_has_ramp && hit_x >= 10.0f && hit_x <= 13.0f &&
+        (map_y == 10 || map_y == 12)) {
       wall_base = (hit_x - 10.0f) * 0.25f;
-    } else if (g_floor == 0 && hit_x >= 14.0f && hit_y >= 11.0f && hit_y < 12.0f) {
+    } else if (g_has_ramp && hit_x >= 14.0f && hit_y >= 11.0f && hit_y < 12.0f) {
       wall_base = 0.75f;
     }
 
@@ -962,12 +1107,14 @@ void draw_world() {
   if (now < g_banner_until && g_banner[0] != '\0') {
     const int w = oled.getStrWidth(g_banner);
     const int x = (128 - w) / 2;
-    for (int y = 19; y < 30; ++y) {
+    // Keep the level label in the sky band; a center-screen banner hides
+    // the horizon and makes the newly loaded floor look missing.
+    for (int y = 0; y < 9; ++y) {
       for (int xx = x - 2; xx < x + w + 2; ++xx) {
         pixel(buf, xx, y, false);
       }
     }
-    oled.drawStr(x, 21, g_banner);
+    oled.drawStr(x, 1, g_banner);
   }
 
   if (g_mode == Mode::Dead) {
@@ -1053,23 +1200,18 @@ void try_move(float dx, float dy) {
 bool use_ramp_if_entered(int old_x, int old_y) {
   const int new_x = (int)floorf(g_px);
   const int new_y = (int)floorf(g_py);
-  const char cell = raw_at(new_x, new_y);
-  const bool ramp_end = g_floor == 0
-                            ? cell == '^'
-                            : (old_x == 10 && new_x == 9 && new_y == 11);
-  if (!ramp_end || (old_x == new_x && old_y == new_y)) {
+  const uint8_t cell = map_at(new_x, new_y);
+  const bool level_exit = cell == kCellRampExit || cell == kCellExit;
+  if (!level_exit || (old_x == new_x && old_y == new_y)) {
     return false;
   }
 
-  save_floor_state();
-  g_floor = (uint8_t)((g_floor + 1) % kFloorCount);
-  // Floor two joins the top of the ramp; the return trip lands at its foot.
-  g_px = g_floor == 0 ? 9.5f : 13.5f;
-  g_py = 11.5f;
-  memset(g_shots, 0, sizeof g_shots);
-  load_floor_state();
-  aim();
-  say(g_floor == 0 ? "RAMP DOWN - FLOOR 1" : "RAMP UP - FLOOR 2", 1600);
+  if (g_level + 1 >= kLevelCount) {
+    g_mode = Mode::Won;
+    return true;
+  }
+  load_level((uint8_t)(g_level + 1));
+  say(kLevels[g_level].name, 1600);
   return true;
 }
 
@@ -1413,8 +1555,8 @@ void game_step(const Input &input) {
   g_bob = (int)(sinf(g_bob_phase) * 2.0f);
 
   take_pickups();
-  if (g_floor == kFloorCount - 1 && g_exit_x >= 0 &&
-      (int)floorf(g_px) == g_exit_x && (int)floorf(g_py) == g_exit_y) {
+  if (g_exit_x >= 0 && (int)floorf(g_px) == g_exit_x &&
+      (int)floorf(g_py) == g_exit_y) {
     g_mode = Mode::Won;
     return;
   }
