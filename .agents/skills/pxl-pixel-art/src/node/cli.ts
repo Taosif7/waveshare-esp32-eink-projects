@@ -21,7 +21,8 @@ const USAGE = `pxl — pixel-art DSL
       Print an asset as palette keys with x/y rulers (anims: every frame).
   pxl lint  <art.px.js> [name ...]
       Critique pixel art: orphan pixels, jaggies, pillow shading, near-duplicate and too many colors,
-      with coordinates; writes out/_preview/<name>.lint.png marking the pixels (default: every asset).
+      with coordinates; animated assets are checked frame by frame. Writes out/_preview/<name>.lint.png
+      for still assets and <name>_frame_<n>.lint.png for animated frames with local findings.
   pxl list  <art.px.js>
       List assets, groups and sheets with their source locations.
   pxl trace <image.png> [--w N | --h N | --scale S] [--colors 16 | --palette pico8] [--dither 0..1]
@@ -114,22 +115,33 @@ export async function main(argv: string[]): Promise<number> {
         const names = a.rest.length ? a.rest : p.exported();
         let total = 0;
         for (const name of names) {
-          const img = p.assets.get(name)?.kind === "anim" ? p.frames(name)[0]?.img ?? p.image(name) : p.image(name);
-          const found = lint(img, p.assets.get(name)?.kind ?? "asset");
-          total += found.length;
-          if (!found.length) { console.log(`${name}: clean`); continue; }
-          console.log(`${name}: ${found.length} finding${found.length > 1 ? "s" : ""}`);
-          for (const f of found) console.log(`  ${f.rule.padEnd(14)} ${f.message}${f.at.length ? `\n${" ".repeat(17)}at ${f.at.slice(0, 12).map(([x, y]) => `${x},${y}`).join(" ")}${f.at.length > 12 ? " …" : ""}` : ""}`);
-          if (a.preview !== false && found.some((f) => f.at.length)) {
-            const s = Math.max(4, Math.min(16, Math.floor(512 / Math.max(img.w, img.h))));
-            const pv = preview(img, s);
-            const mark = { orphan: 0xff2bd6ff, jaggy: 0x00e5ffff } as Record<string, number>;
-            for (const f of found) for (const [x, y] of f.at)
-              for (let k = 0; k < s; k++) for (const [px, py] of [[x * s + k, y * s], [x * s + k, y * s + s - 1], [x * s, y * s + k], [x * s + s - 1, y * s + k]])
-                pv.set(px, py, mark[f.rule] ?? 0xff0000ff);
-            writePng(join(outDir, "_preview", `${name}.lint.png`), pv);
-            writeFileSync(join(outDir, "_preview", ".gdignore"), "");
+          const kind = p.assets.get(name)?.kind ?? "asset";
+          const animated = kind === "anim";
+          const frames = animated ? p.frames(name) : [{ img: p.image(name), ms: 0 }];
+          const lintFrames = frames.length ? frames : [{ img: p.image(name), ms: 0 }];
+          let assetTotal = 0;
+          for (const [i, frame] of lintFrames.entries()) {
+            const { img } = frame;
+            const found = lint(img, kind);
+            assetTotal += found.length;
+            if (!found.length) continue;
+            const label = animated ? `${name}: frame ${i} (${frame.ms}ms)` : name;
+            console.log(`${label}: ${found.length} finding${found.length > 1 ? "s" : ""}`);
+            for (const f of found) console.log(`  ${f.rule.padEnd(14)} ${f.message}${f.at.length ? `\n${" ".repeat(17)}at ${f.at.slice(0, 12).map(([x, y]) => `${x},${y}`).join(" ")}${f.at.length > 12 ? " …" : ""}` : ""}`);
+            if (a.preview !== false && found.some((f) => f.at.length)) {
+              const s = Math.max(4, Math.min(16, Math.floor(512 / Math.max(img.w, img.h))));
+              const pv = preview(img, s);
+              const mark = { orphan: 0xff2bd6ff, jaggy: 0x00e5ffff } as Record<string, number>;
+              for (const f of found) for (const [x, y] of f.at)
+                for (let k = 0; k < s; k++) for (const [px, py] of [[x * s + k, y * s], [x * s + k, y * s + s - 1], [x * s, y * s + k], [x * s + s - 1, y * s + k]])
+                  pv.set(px, py, mark[f.rule] ?? 0xff0000ff);
+              const suffix = animated ? `_frame_${i}` : "";
+              writePng(join(outDir, "_preview", `${name}${suffix}.lint.png`), pv);
+              writeFileSync(join(outDir, "_preview", ".gdignore"), "");
+            }
           }
+          total += assetTotal;
+          if (!assetTotal) console.log(`${name}: clean`);
         }
         console.log(`${total} finding${total === 1 ? "" : "s"} in ${names.length} asset${names.length === 1 ? "" : "s"}`);
         return 0;

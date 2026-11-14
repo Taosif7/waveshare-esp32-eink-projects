@@ -20,7 +20,8 @@ parts, primitives, brushes and tilemaps. Needs Node ≥ 22.18. No install step.
    it's cheaper than an image.
 4. Fix with small edits (a `grid(x, y, ...)` patch, one op) and rebuild. Repeat.
    Before calling a sprite done, run `PXL lint art.px.js <name>`: it lists orphan pixels, jaggies
-   and pillow shading with coordinates (and boxes them in `_preview/<name>.lint.png`).
+   and pillow shading with coordinates. Animated assets are linted frame by frame; local findings
+   are boxed in `_preview/<name>_frame_<n>.lint.png` (still assets use `<name>.lint.png`).
 5. If the user wants to watch: start `PXL serve art.px.js` in the background and give them the URL.
    It rebuilds on every save and replays the edited asset's painting steps; it also writes the same
    `out/` files, so keep reading previews as usual.
