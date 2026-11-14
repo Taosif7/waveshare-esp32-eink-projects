@@ -28,12 +28,11 @@ constexpr uint8_t kBayer4x4[16] = {
 };
 
 // One byte per cell. Reserve 0x10-0x1F for wall materials, 0x20-0x2F for
-// ramps, 0x30-0x3F for actors, 0x40-0x4F for pickups, and 0x50-0x5F for exits.
+// mechanisms, 0x30-0x3F for actors, 0x40-0x4F for pickups, and 0x50-0x5F for exits.
 enum MapCell : uint8_t {
   kCellFloor = 0x00,
   kCellBrickWall = 0x10,
-  kCellRamp = 0x20,
-  kCellRampExit = 0x21,
+  kCellGate = 0x22,
   kCellPlayerStart = 0x30,
   kCellGuardSpawn = 0x31,
   kCellDemonSpawn = 0x32,
@@ -65,7 +64,7 @@ const uint8_t kMapData[kLevelCount][kMapH][kMapW] = {
     {0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // #####.##########
     {0x10, 0x10, 0x10, 0x10, 0x10, 0x41, 0x32, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // #####hm#########
     {0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // #####.##########
-    {0x10, 0x10, 0x10, 0x42, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x20, 0x20, 0x20, 0x21, 0x00, 0x10}, // ###v......rrr^.#
+    {0x10, 0x10, 0x10, 0x42, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x22, 0x00, 0x10}, // ###v.........G.#
     {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
     {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
     {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
@@ -82,7 +81,7 @@ const uint8_t kMapData[kLevelCount][kMapH][kMapW] = {
     {0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ###.############
     {0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ###.############
     {0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ###.############
-    {0x10, 0x10, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x20, 0x20, 0x20, 0x21, 0x00, 0x10}, // ###.......rrr^.#
+    {0x10, 0x10, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x22, 0x00, 0x10}, // ###..........G.#
     {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
     {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
     {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
@@ -100,7 +99,7 @@ const uint8_t kMapData[kLevelCount][kMapH][kMapW] = {
     {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10}, // ##########.#####
     {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10}, // ##########.#####
     {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10}, // ##########.#####
-    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x20, 0x20, 0x20, 0x21, 0x00, 0x10}, // ##########rrr^.#
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x00, 0x00, 0x22, 0x00, 0x10}, // ##########...G.#
     {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
     {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
     {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
@@ -118,7 +117,7 @@ const uint8_t kMapData[kLevelCount][kMapH][kMapW] = {
     {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10}, // ##########.#####
     {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10}, // ##########.#####
     {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10}, // ##########.#####
-    {0x10, 0x10, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x20, 0x20, 0x20, 0x21, 0x00, 0x10}, // ###.......rrr^.#
+    {0x10, 0x10, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x22, 0x00, 0x10}, // ###..........G.#
     {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
     {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
     {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
@@ -197,12 +196,12 @@ struct Bill {
 
 enum class Mode : uint8_t { Title, Menu, Play, Dead, Won };
 enum class RunMode : uint8_t { Levels, Infinite };
+enum class TransitionPhase : uint8_t { Out, In };
 
 Mode g_mode = Mode::Title;
 RunMode g_run_mode = RunMode::Levels;
 bool g_map = false;
 uint8_t g_level = 0;
-bool g_has_ramp = false;
 uint8_t g_runtime_map[kMapH][kMapW];
 uint32_t g_rng = 1;
 uint32_t g_score = 0;
@@ -226,6 +225,15 @@ int g_ammo = 24;
 bool g_shotgun = false;
 int g_exit_x = -1;
 int g_exit_y = -1;
+int g_gate_x = -1;
+int g_gate_y = -1;
+uint8_t g_gate_open = 0;
+bool g_gate_started = false;
+uint32_t g_gate_open_started = 0;
+bool g_transitioning = false;
+bool g_transition_to_won = false;
+TransitionPhase g_transition_phase = TransitionPhase::Out;
+uint32_t g_transition_started = 0;
 uint32_t g_next_shot = 0;
 uint32_t g_flash_until = 0;
 uint32_t g_pain_until = 0;
@@ -295,7 +303,8 @@ uint8_t map_at(int x, int y) {
 
 bool block_ray(int x, int y) {
   const uint8_t cell = map_at(x, y);
-  return cell >= 0x10 && cell <= 0x1F;
+  return (cell >= 0x10 && cell <= 0x1F) ||
+         ((cell == kCellGate || cell == kCellExit) && g_gate_open < 100);
 }
 
 int camera_horizon() {
@@ -303,19 +312,6 @@ int camera_horizon() {
 }
 
 float camera_z() {
-  const int x = (int)floorf(g_px);
-  const int y = (int)floorf(g_py);
-  const uint8_t cell = map_at(x, y);
-  if (cell == kCellRamp || cell == kCellRampExit) {
-    float progress = (g_px - 10.0f) / 3.0f;
-    if (progress < 0.0f) {
-      progress = 0.0f;
-    }
-    if (progress > 1.0f) {
-      progress = 1.0f;
-    }
-    return 0.5f + progress * 0.75f;
-  }
   return 0.5f;
 }
 
@@ -359,7 +355,7 @@ bool art_width(const char *const *rows, int n, int w) {
 }
 
 void check_art() {
-  const bool ok = art_width(kTexWall, 16, 16) &&
+  const bool ok = art_width(kTexWall, 16, 16) && art_width(kTexGate, 16, 16) &&
                   art_width(kSprGuard, 16, 16) && art_width(kSprBeast, 16, 16) &&
                   art_width(kSprGuardWalk, 16, 16) && art_width(kSprGuardAttack, 16, 16) &&
                   art_width(kSprBeastWalk, 16, 16) && art_width(kSprBeastAttack, 16, 16) &&
@@ -375,11 +371,15 @@ void check_art() {
 
 void clear_active_map_state() {
   g_map = false;
-  g_has_ramp = false;
   g_enemy_n = 0;
   g_pickup_n = 0;
   g_exit_x = -1;
   g_exit_y = -1;
+  g_gate_x = -1;
+  g_gate_y = -1;
+  g_gate_open = 0;
+  g_gate_started = false;
+  g_gate_open_started = 0;
   memset(g_enemies, 0, sizeof g_enemies);
   memset(g_pickups, 0, sizeof g_pickups);
   memset(g_shots, 0, sizeof g_shots);
@@ -461,9 +461,6 @@ void activate_map() {
   for (int y = 0; y < kMapH; ++y) {
     for (int x = 0; x < kMapW; ++x) {
       const uint8_t cell = map_at(x, y);
-      if (cell == kCellRamp || cell == kCellRampExit) {
-        g_has_ramp = true;
-      }
       const float cx = (float)x + 0.5f;
       const float cy = (float)y + 0.5f;
       if (cell == kCellPlayerStart) {
@@ -481,6 +478,11 @@ void activate_map() {
       } else if (cell == kCellExit) {
         g_exit_x = x;
         g_exit_y = y;
+        g_gate_x = x;
+        g_gate_y = y;
+      } else if (cell == kCellGate) {
+        g_gate_x = x;
+        g_gate_y = y;
       }
     }
   }
@@ -520,7 +522,6 @@ void generate_infinite_map() {
   clear_active_map_state();
   g_run_mode = RunMode::Infinite;
   g_level = 0;
-  g_has_ramp = true;
   g_exit_x = -1;
   g_exit_y = -1;
   g_px = 2.5f;
@@ -539,10 +540,7 @@ void generate_infinite_map() {
   carve_v(a + (int)(rng_next() % (uint32_t)(b - a + 1)), 2, 3);
   carve_v(c + (int)(rng_next() % (uint32_t)(10 - c)), 8, 10);
   g_runtime_map[1][2] = kCellPlayerStart;
-  g_runtime_map[11][10] = kCellRamp;
-  g_runtime_map[11][11] = kCellRamp;
-  g_runtime_map[11][12] = kCellRamp;
-  g_runtime_map[11][13] = kCellRampExit;
+  g_runtime_map[11][13] = kCellGate;
   g_px = 2.5f;
   g_py = 1.5f;
   g_ang = 0.0f;
@@ -725,18 +723,14 @@ void draw_map() {
       const int y0 = kMapY + y * kCell;
       if (cell >= 0x10 && cell <= 0x1F) {
         fill_box(buf, x0, y0, kCell, kCell);
-      } else if (cell == kCellRamp || cell == kCellRampExit) {
-        for (int i = 0; i < kCell; ++i) {
-          pixel(buf, x0 + i, y0 + kCell - 1 - i, true);
-        }
-        if (cell == kCellRampExit) {
-          pixel(buf, x0 + 1, y0 + 1, true);
-        }
-      } else if (cell == kCellExit) {
+      } else if (cell == kCellGate || cell == kCellExit) {
         pixel(buf, x0, y0, true);
+        pixel(buf, x0 + 1, y0, true);
         pixel(buf, x0 + 2, y0, true);
-        pixel(buf, x0 + 1, y0 + 1, true);
+        pixel(buf, x0, y0 + 1, true);
+        pixel(buf, x0 + 2, y0 + 1, true);
         pixel(buf, x0, y0 + 2, true);
+        pixel(buf, x0 + 1, y0 + 2, true);
         pixel(buf, x0 + 2, y0 + 2, true);
       }
     }
@@ -784,8 +778,7 @@ void draw_map() {
   snprintf(enemy_label, sizeof enemy_label, "EN %02d", alive_enemies);
   oled.drawStr(2, 29, enemy_label);
   oled.drawStr(2, 41, "GOAL");
-  oled.drawStr(2, 50, g_level == kLevelCount - 1 ? "EXIT" :
-                       (g_has_ramp ? "RAMP" : "EXIT"));
+  oled.drawStr(2, 50, "GATE");
 
   oled.drawStr(94, 10, "HP");
   for (int x = 0; x < 30; ++x) {
@@ -864,125 +857,6 @@ void paint_tex(uint8_t *buf, int x, int y0, int y1, int span0, int span_h,
       continue;
     }
     pixel(buf, x, y, true);
-  }
-}
-
-void draw_ramp_surface(uint8_t *buf) {
-  if (!g_has_ramp) {
-    return;
-  }
-  struct Vertex {
-    float side;
-    float depth;
-    float z;
-  };
-  struct ScreenVertex {
-    float x;
-    float y;
-    float inv_depth;
-  };
-
-  const float ramp_dx = g_px - 11.5f;
-  const float ramp_dy = g_py - 11.5f;
-  if (ramp_dx * ramp_dx + ramp_dy * ramp_dy > 49.0f) {
-    return;
-  }
-
-  // Transform the ramp's four corners into camera space, then clip at the
-  // near plane so the mesh remains valid when the player is on the incline.
-  constexpr float kNear = 0.12f;
-  const float det = g_plane_x * g_dir_y - g_dir_x * g_plane_y;
-  if (fabsf(det) < 0.001f) {
-    return;
-  }
-  const float inv_det = 1.0f / det;
-  const float wx[4] = {10.0f, 13.0f, 13.0f, 10.0f};
-  const float wy[4] = {11.0f, 11.0f, 12.0f, 12.0f};
-  Vertex source[4];
-  for (int i = 0; i < 4; ++i) {
-    const float dx = wx[i] - g_px;
-    const float dy = wy[i] - g_py;
-    source[i].side = inv_det * (g_dir_y * dx - g_dir_x * dy);
-    source[i].depth = inv_det * (-g_plane_y * dx + g_plane_x * dy);
-    source[i].z = (wx[i] - 10.0f) * 0.25f;
-  }
-
-  Vertex clipped[8];
-  int clipped_n = 0;
-  Vertex previous = source[3];
-  bool previous_in = previous.depth >= kNear;
-  for (int i = 0; i < 4; ++i) {
-    const Vertex current = source[i];
-    const bool current_in = current.depth >= kNear;
-    if (current_in != previous_in) {
-      const float t = (kNear - previous.depth) / (current.depth - previous.depth);
-      clipped[clipped_n++] = {
-          previous.side + t * (current.side - previous.side), kNear,
-          previous.z + t * (current.z - previous.z)};
-    }
-    if (current_in) {
-      clipped[clipped_n++] = current;
-    }
-    previous = current;
-    previous_in = current_in;
-  }
-  if (clipped_n < 3) {
-    return;
-  }
-
-  ScreenVertex screen[8];
-  const float eye_z = camera_z();
-  const float horizon = (float)camera_horizon();
-  for (int i = 0; i < clipped_n; ++i) {
-    const Vertex &v = clipped[i];
-    screen[i].inv_depth = 1.0f / v.depth;
-    screen[i].x = (float)kViewW * 0.5f * (1.0f + v.side * screen[i].inv_depth);
-    screen[i].y = horizon - (v.z - eye_z) * (float)kViewH * screen[i].inv_depth;
-  }
-
-  float wall_inv[kViewW];
-  for (int x = 0; x < kViewW; ++x) {
-    wall_inv[x] = g_z[x] == 65535 ? 0.0f : 256.0f / (float)g_z[x];
-  }
-  // Fan-triangulate the clipped quad and rasterize it at native resolution.
-  // The near-distance cull keeps this smooth mesh inexpensive on the ESP32-C3.
-  for (int tri = 1; tri + 1 < clipped_n; ++tri) {
-    const ScreenVertex &a = screen[0];
-    const ScreenVertex &b = screen[tri];
-    const ScreenVertex &c = screen[tri + 1];
-    const float area = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
-    if (fabsf(area) < 0.001f) {
-      continue;
-    }
-    int min_x = (int)floorf(fminf(a.x, fminf(b.x, c.x)));
-    int max_x = (int)ceilf(fmaxf(a.x, fmaxf(b.x, c.x)));
-    int min_y = (int)floorf(fminf(a.y, fminf(b.y, c.y)));
-    int max_y = (int)ceilf(fmaxf(a.y, fmaxf(b.y, c.y)));
-    if (min_x < 0) min_x = 0;
-    if (max_x >= kViewW) max_x = kViewW - 1;
-    if (min_y < 0) min_y = 0;
-    if (max_y >= kViewH) max_y = kViewH - 1;
-
-    const float inv_area = 1.0f / area;
-    for (int y = min_y; y <= max_y; ++y) {
-      for (int x = min_x; x <= max_x; ++x) {
-        const float px = (float)x + 0.5f;
-        const float py = (float)y + 0.5f;
-        const float wa = ((b.x - px) * (c.y - py) - (b.y - py) * (c.x - px)) * inv_area;
-        const float wb = ((c.x - px) * (a.y - py) - (c.y - py) * (a.x - px)) * inv_area;
-        const float wc = 1.0f - wa - wb;
-        if (wa < -0.001f || wb < -0.001f || wc < -0.001f) {
-          continue;
-        }
-        const float inv_depth = wa * a.inv_depth + wb * b.inv_depth + wc * c.inv_depth;
-        if (inv_depth <= wall_inv[x]) {
-          continue;
-        }
-        const uint8_t rank = kBayer4x4[(y & 3) * 4 + (x & 3)];
-        const bool tread_groove = (y & 3) == 0;
-        pixel(buf, x, y, tread_groove ? rank < 3 : rank < 12);
-      }
-    }
   }
 }
 
@@ -1149,6 +1023,7 @@ void draw_world() {
 
     int side = 0;
     int hit = 0;
+    uint8_t hit_cell = kCellBrickWall;
     for (int n = 0; n < 48; ++n) {
       if (side_x < side_y) {
         side_x += delta_x;
@@ -1160,11 +1035,14 @@ void draw_world() {
         side = 1;
       }
       if (map_x < 0 || map_y < 0 || map_x >= kMapW || map_y >= kMapH) {
+        hit_cell = kCellBrickWall;
         hit = 1;
         break;
       }
       const uint8_t cell = map_at(map_x, map_y);
-      if (cell >= 0x10 && cell <= 0x1F) {
+      if ((cell >= 0x10 && cell <= 0x1F) ||
+          ((cell == kCellGate || cell == kCellExit) && g_gate_open < 100)) {
+        hit_cell = cell;
         hit = 1;
         break;
       }
@@ -1183,14 +1061,6 @@ void draw_world() {
 
     const float hit_x = g_px + perp * ray_x;
     const float hit_y = g_py + perp * ray_y;
-    float wall_base = 0.0f;
-    if (g_has_ramp && hit_x >= 10.0f && hit_x <= 13.0f &&
-        (map_y == 10 || map_y == 12)) {
-      wall_base = (hit_x - 10.0f) * 0.25f;
-    } else if (g_has_ramp && hit_x >= 14.0f && hit_y >= 11.0f && hit_y < 12.0f) {
-      wall_base = 0.75f;
-    }
-
     float wall_x = (side == 0) ? hit_y : hit_x;
     wall_x -= floorf(wall_x);
     int tex_x = (int)(wall_x * 16.0f);
@@ -1213,16 +1083,18 @@ void draw_world() {
 
     const int line_h = (int)((float)kViewH / perp);
     const int horizon = camera_horizon();
-    const float local_eye_z = camera_z() - wall_base;
+    const float local_eye_z = camera_z();
     const int y_start = horizon + (int)((local_eye_z - 1.0f) * (float)line_h);
     const int y_end = horizon + (int)(local_eye_z * (float)line_h);
+    const bool gate_hit = hit_cell == kCellGate || hit_cell == kCellExit;
+    const int gate_lift = gate_hit ? (line_h * (int)g_gate_open) / 100 : 0;
+    const int gate_bottom = y_end - gate_lift;
+    const char *const *texture = gate_hit ? kTexGate : kTexWall;
     dither_column(buf, col, 0, y_start);
-    dither_column(buf, col, y_end, kViewH);
-
-    paint_tex(buf, col, y_start, y_end, y_start, line_h, kTexWall, tex_x, shade);
+    dither_column(buf, col, gate_hit ? gate_bottom : y_end, kViewH);
+    paint_tex(buf, col, y_start, gate_hit ? gate_bottom : y_end,
+              y_start - gate_lift, line_h, texture, tex_x, shade);
   }
-
-  draw_ramp_surface(buf);
   g_bill_n = 0;
   const uint32_t now = millis();
   const float bob = sinf((float)now * 0.006f) * 0.05f;
@@ -1379,6 +1251,19 @@ void draw_world() {
              (unsigned long)g_infinite_map, (unsigned long)g_score);
     oled.drawStr(2, 1, progress);
   }
+  if (g_transitioning) {
+    uint32_t elapsed = now - g_transition_started;
+    if (elapsed > 320u) elapsed = 320u;
+    const uint8_t step = (uint8_t)(elapsed * 16u / 320u);
+    const uint8_t erase_below = g_transition_phase == TransitionPhase::Out
+                                    ? step : (uint8_t)(16u - step);
+    for (int y = 0; y < 64; ++y) {
+      for (int x = 0; x < 128; ++x) {
+        const uint8_t rank = kBayer4x4[(y & 3) * 4 + (x & 3)];
+        if (rank < erase_below) pixel(buf, x, y, false);
+      }
+    }
+  }
   oled.sendBuffer();
 }
 
@@ -1410,32 +1295,38 @@ void try_move(float dx, float dy) {
   }
 }
 
-bool use_ramp_if_entered(int old_x, int old_y) {
+void update_gate(uint32_t now) {
+  if (g_gate_x < 0 || g_gate_open >= 100) return;
+  const float dx = (float)g_gate_x + 0.5f - g_px;
+  const float dy = (float)g_gate_y + 0.5f - g_py;
+  if (!g_gate_started && dx * dx + dy * dy <= 3.2f * 3.2f) {
+    g_gate_started = true;
+    g_gate_open_started = now;
+    say("GATE ACTIVATED", 1000);
+  }
+  if (g_gate_started) {
+    const uint32_t elapsed = now - g_gate_open_started;
+    g_gate_open = elapsed >= 950 ? 100 : (uint8_t)(elapsed * 100u / 950u);
+    if (g_gate_open == 100) say("GATE OPEN", 700);
+  }
+}
+
+bool use_gate_if_entered(int old_x, int old_y) {
   const int new_x = (int)floorf(g_px);
   const int new_y = (int)floorf(g_py);
   const uint8_t cell = map_at(new_x, new_y);
-  const bool level_exit = cell == kCellRampExit || cell == kCellExit;
-  if (!level_exit || (old_x == new_x && old_y == new_y)) {
+  const bool level_exit = cell == kCellGate || cell == kCellExit;
+  if (!level_exit || g_gate_open < 100 ||
+      (old_x == new_x && old_y == new_y)) {
     return false;
   }
 
-  if (g_run_mode == RunMode::Infinite) {
-    add_score(100);
-    save_best_score();
-    ++g_infinite_map;
-    generate_infinite_map();
-    char label[16];
-    snprintf(label, sizeof label, "MAP %lu", (unsigned long)g_infinite_map);
-    say(label, 1300);
-    return true;
-  }
-
-  if (g_level + 1 >= kLevelCount) {
-    g_mode = Mode::Won;
-    return true;
-  }
-  load_level((uint8_t)(g_level + 1));
-  say(kLevels[g_level].name, 1600);
+  g_transitioning = true;
+  g_transition_to_won = g_run_mode == RunMode::Levels &&
+                        g_level + 1 >= kLevelCount;
+  g_transition_phase = TransitionPhase::Out;
+  g_transition_started = millis();
+  g_map = false;
   return true;
 }
 
@@ -1752,6 +1643,32 @@ void game_step(const Input &input) {
     dt = 0.0f;
   }
 
+  if (g_transitioning) {
+    if (now - g_transition_started >= 320u) {
+      if (g_transition_phase == TransitionPhase::Out) {
+        if (g_transition_to_won) {
+          g_mode = Mode::Won;
+        } else if (g_run_mode == RunMode::Infinite) {
+          add_score(100);
+          save_best_score();
+          ++g_infinite_map;
+          generate_infinite_map();
+          char label[16];
+          snprintf(label, sizeof label, "MAP %lu", (unsigned long)g_infinite_map);
+          say(label, 1300);
+        } else {
+          load_level((uint8_t)(g_level + 1));
+          say(kLevels[g_level].name, 1300);
+        }
+        g_transition_phase = TransitionPhase::In;
+        g_transition_started = now;
+      } else {
+        g_transitioning = false;
+      }
+    }
+    return;
+  }
+
   if (g_mode == Mode::Title) {
     if (input.use_edge || input.fire_edge) g_mode = Mode::Menu;
     return;
@@ -1761,7 +1678,11 @@ void game_step(const Input &input) {
       g_menu_choice = input.axis_y < 0 ? 0 : 1;
       g_menu_repeat_at = now + 220;
     }
-    if (input.use_edge || input.fire_edge) {
+    if (input.use_edge) {
+      g_mode = Mode::Title;
+      return;
+    }
+    if (input.fire_edge) {
       if (g_menu_choice == 0) begin_level();
       else begin_infinite();
     }
@@ -1798,7 +1719,8 @@ void game_step(const Input &input) {
   const int old_cell_x = (int)floorf(g_px);
   const int old_cell_y = (int)floorf(g_py);
   try_move(g_dir_x * step, g_dir_y * step);
-  if (use_ramp_if_entered(old_cell_x, old_cell_y)) {
+  update_gate(now);
+  if (use_gate_if_entered(old_cell_x, old_cell_y)) {
     return;
   }
   if (fabsf(forward) > 0.12f) {
