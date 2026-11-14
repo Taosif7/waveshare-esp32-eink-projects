@@ -2,9 +2,11 @@
 
 #include "art.h"
 #include "oled.h"
+#include "title_logo.h"
 
 #include <Arduino.h>
 #include <math.h>
+#include <Preferences.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -12,23 +14,141 @@ namespace {
 
 constexpr int kMapW = 16;
 constexpr int kMapH = 16;
+constexpr int kLevelCount = 5;
 constexpr int kViewW = 128;
 constexpr int kViewH = 56;
 constexpr int kHorizon = 22;
 constexpr float kPlane = 0.80f;
 constexpr float kTau = 6.2831853f;
 constexpr int kMaxEnemy = 8;
-constexpr int kMaxDoor = 8;
 constexpr int kMaxPickup = 12;
 constexpr int kMaxShot = 6;
+constexpr uint8_t kBayer4x4[16] = {
+    0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5,
+};
 
-// +Y is south, so the rows below read the way they are drawn. Angle 0 faces east.
-// The red door is the only way into the exit row.
-const char *const kMap[kMapH] = {
-    "################", "#@..a..........#", "####d###########", "#..............#",
-    "#..e....####...#", "#.......#k#....#", "#..####.#.#..h.#", "#.a#....#.#....#",
-    "#..#.m..d.d....#", "#..#....#.#..g.#", "#..######.#....#", "#e........#..v.#",
-    "######r#########", "#..............#", "#.....x........#", "################",
+// One byte per cell. Reserve 0x10-0x1F for wall materials, 0x20-0x2F for
+// mechanisms, 0x30-0x3F for actors, 0x40-0x4F for pickups, and 0x50-0x5F for exits.
+enum MapCell : uint8_t {
+  kCellFloor = 0x00,
+  kCellBrickWall = 0x10,
+  kCellGate = 0x22,
+  kCellPlayerStart = 0x30,
+  kCellGuardSpawn = 0x31,
+  kCellDemonSpawn = 0x32,
+  kCellAmmo = 0x40,
+  kCellMedkit = 0x41,
+  kCellArmor = 0x42,
+  kCellShotgun = 0x43,
+  kCellExit = 0x50,
+};
+
+struct LevelDef {
+  const uint8_t (*cells)[kMapW];
+  float start_angle;
+  const char *name;
+};
+
+// Row-major byte maps; comments show the original character-grid layout.
+// +Y points south and a start angle of zero faces east.
+const uint8_t kMapData[kLevelCount][kMapH][kMapW] = {
+  {
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+    {0x10, 0x10, 0x10, 0x30, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ###@.###########
+    {0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ####.###########
+    {0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ####.###########
+    {0x10, 0x10, 0x10, 0x10, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ####....a.######
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x31, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // #######e#.######
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x00, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // #######...######
+    {0x10, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // #a........######
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // #####.##########
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x41, 0x32, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // #####hm#########
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // #####.##########
+    {0x10, 0x10, 0x10, 0x42, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x22, 0x00, 0x10}, // ###v.........G.#
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+  },
+  {
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+    {0x10, 0x10, 0x30, 0x00, 0x00, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ##@...##########
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // #####.##########
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10}, // #####....a.#####
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10}, // ##########.#####
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10}, // ##########.#####
+    {0x10, 0x00, 0x00, 0x00, 0x00, 0x31, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10}, // #....e.....#####
+    {0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ###.############
+    {0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ###.############
+    {0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ###.############
+    {0x10, 0x10, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x22, 0x00, 0x10}, // ###..........G.#
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+  },
+  {
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+    {0x10, 0x10, 0x30, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x10, 0x10}, // ##@..........###
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10}, // ############.###
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10}, // ############.###
+    {0x10, 0x10, 0x10, 0x10, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x10, 0x10, 0x10}, // ####....a....###
+    {0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ####.###########
+    {0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ####.###########
+    {0x10, 0x10, 0x10, 0x10, 0x00, 0x00, 0x00, 0x31, 0x00, 0x00, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10}, // ####...e...#####
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10}, // ##########.#####
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10}, // ##########.#####
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10}, // ##########.#####
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x00, 0x00, 0x22, 0x00, 0x10}, // ##########...G.#
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+  },
+  {
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+    {0x10, 0x10, 0x30, 0x00, 0x00, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ##@...##########
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // #####.##########
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // #####.##########
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x41, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // #####.h.########
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // #######.########
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // #######.########
+    {0x10, 0x10, 0x00, 0x00, 0x00, 0x42, 0x00, 0x31, 0x00, 0x00, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10}, // ##...v.e...#####
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10}, // ##########.#####
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10}, // ##########.#####
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10}, // ##########.#####
+    {0x10, 0x10, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x22, 0x00, 0x10}, // ###..........G.#
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+  },
+  {
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+    {0x10, 0x10, 0x30, 0x00, 0x00, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ##@...##########
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // #####.##########
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // #####.##########
+    {0x10, 0x10, 0x10, 0x10, 0x00, 0x00, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ####...#########
+    {0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ####.###########
+    {0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ####.###########
+    {0x10, 0x10, 0x10, 0x10, 0x00, 0x00, 0x00, 0x31, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ####...e.#######
+    {0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ####.###########
+    {0x10, 0x10, 0x10, 0x10, 0x00, 0x00, 0x00, 0x00, 0x40, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ####....a#######
+    {0x10, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ####.###########
+    {0x10, 0x10, 0x10, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x41, 0x00, 0x00, 0x00, 0x50, 0x10, 0x10}, // ####.....h...x##
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}, // ################
+  },
+};
+
+const LevelDef kLevels[kLevelCount] = {
+    {kMapData[0], 0.0f, "MAP 1"},
+    {kMapData[1], 0.0f, "MAP 2"},
+    {kMapData[2], 0.0f, "MAP 3"},
+    {kMapData[3], 0.0f, "MAP 4"},
+    {kMapData[4], 0.0f, "MAP 5"},
 };
 
 enum Kind : uint8_t { kGuard, kBeast };
@@ -42,17 +162,9 @@ struct Enemy {
   uint32_t next_act;
   uint32_t saw_until;
   uint32_t flash_until;
+  uint32_t attack_until;
   Kind kind;
   bool alive;
-};
-
-struct Door {
-  uint8_t x;
-  uint8_t y;
-  uint8_t open;
-  int8_t vel;
-  bool red;
-  uint32_t hold_until;
 };
 
 struct Pickup {
@@ -82,10 +194,21 @@ struct Bill {
   bool flash;
 };
 
-enum class Mode : uint8_t { Title, Play, Dead, Won };
+enum class Mode : uint8_t { Title, Menu, Play, Dead, Won };
+enum class RunMode : uint8_t { Levels, Infinite };
+enum class TransitionPhase : uint8_t { Out, In };
 
 Mode g_mode = Mode::Title;
+RunMode g_run_mode = RunMode::Levels;
 bool g_map = false;
+uint8_t g_level = 0;
+uint8_t g_runtime_map[kMapH][kMapW];
+uint32_t g_rng = 1;
+uint32_t g_score = 0;
+uint32_t g_best_score = 0;
+uint32_t g_infinite_map = 1;
+uint32_t g_menu_repeat_at = 0;
+uint8_t g_menu_choice = 0;
 float g_px = 1.5f;
 float g_py = 1.5f;
 float g_ang = 0;
@@ -99,10 +222,18 @@ int g_kick = 0;
 int g_hp = 100;
 int g_armor = 0;
 int g_ammo = 24;
-bool g_key = false;
 bool g_shotgun = false;
 int g_exit_x = -1;
 int g_exit_y = -1;
+int g_gate_x = -1;
+int g_gate_y = -1;
+uint8_t g_gate_open = 0;
+bool g_gate_started = false;
+uint32_t g_gate_open_started = 0;
+bool g_transitioning = false;
+bool g_transition_to_won = false;
+TransitionPhase g_transition_phase = TransitionPhase::Out;
+uint32_t g_transition_started = 0;
 uint32_t g_next_shot = 0;
 uint32_t g_flash_until = 0;
 uint32_t g_pain_until = 0;
@@ -112,15 +243,41 @@ char g_banner[16] = "";
 
 Enemy g_enemies[kMaxEnemy];
 int g_enemy_n = 0;
-Door g_doors[kMaxDoor];
-int g_door_n = 0;
-uint8_t g_door_at[kMapH][kMapW];
 Pickup g_pickups[kMaxPickup];
 int g_pickup_n = 0;
 Shot g_shots[kMaxShot];
 uint16_t g_z[kViewW];
 Bill g_bills[24];
 int g_bill_n = 0;
+
+uint32_t rng_next() {
+  uint32_t x = g_rng;
+  x ^= x << 13;
+  x ^= x >> 17;
+  x ^= x << 5;
+  g_rng = x ? x : 0xA341316Cu;
+  return g_rng;
+}
+
+void add_score(uint32_t points) {
+  if (0xFFFFFFFFu - g_score < points) {
+    g_score = 0xFFFFFFFFu;
+  } else {
+    g_score += points;
+  }
+}
+
+void save_best_score() {
+  if (g_run_mode != RunMode::Infinite || g_score <= g_best_score) {
+    return;
+  }
+  g_best_score = g_score;
+  Preferences prefs;
+  if (prefs.begin("minidoom", false)) {
+    prefs.putUInt("inf_best", g_best_score);
+    prefs.end();
+  }
+}
 
 void say(const char *text, uint32_t ms) {
   strncpy(g_banner, text, sizeof g_banner - 1);
@@ -136,26 +293,26 @@ void aim() {
   g_plane_y = cosf(g_ang) * kPlane;
 }
 
-char raw_at(int x, int y) {
+uint8_t map_at(int x, int y) {
   if (x < 0 || y < 0 || x >= kMapW || y >= kMapH) {
-    return '#';
+    return kCellBrickWall;
   }
-  return kMap[y][x];
+  return g_run_mode == RunMode::Infinite ? g_runtime_map[y][x]
+                                         : kLevels[g_level].cells[y][x];
 }
 
 bool block_ray(int x, int y) {
-  const char c = raw_at(x, y);
-  if (c == '#') {
-    return true;
-  }
-  if (c == 'd' || c == 'r') {
-    const uint8_t id = g_door_at[y][x];
-    if (id == 0xFF) {
-      return true;
-    }
-    return g_doors[id].open < 230;
-  }
-  return false;
+  const uint8_t cell = map_at(x, y);
+  return (cell >= 0x10 && cell <= 0x1F) ||
+         ((cell == kCellGate || cell == kCellExit) && g_gate_open < 100);
+}
+
+int camera_horizon() {
+  return kHorizon + g_bob;
+}
+
+float camera_z() {
+  return 0.5f;
 }
 
 bool block_body(float x, float y) {
@@ -165,15 +322,8 @@ bool block_body(float x, float y) {
   for (int i = 0; i < 4; ++i) {
     const int cx = (int)floorf(px[i]);
     const int cy = (int)floorf(py[i]);
-    const char c = raw_at(cx, cy);
-    if (c == '#') {
+    if (block_ray(cx, cy)) {
       return true;
-    }
-    if (c == 'd' || c == 'r') {
-      const uint8_t id = g_door_at[cy][cx];
-      if (id == 0xFF || g_doors[id].open < 120) {
-        return true;
-      }
     }
   }
   return false;
@@ -205,12 +355,12 @@ bool art_width(const char *const *rows, int n, int w) {
 }
 
 void check_art() {
-  const bool ok = art_width(kTexBrick, 16, 16) && art_width(kTexTech, 16, 16) &&
-                  art_width(kTexRib, 16, 16) && art_width(kTexSupport, 16, 16) &&
-                  art_width(kTexDoor, 16, 16) && art_width(kTexRed, 16, 16) &&
+  const bool ok = art_width(kTexWall, 16, 16) && art_width(kTexGate, 16, 16) &&
                   art_width(kSprGuard, 16, 16) && art_width(kSprBeast, 16, 16) &&
+                  art_width(kSprGuardWalk, 16, 16) && art_width(kSprGuardAttack, 16, 16) &&
+                  art_width(kSprBeastWalk, 16, 16) && art_width(kSprBeastAttack, 16, 16) &&
                   art_width(kSprCorpse, 16, 16) && art_width(kSprPistol, 16, 16) &&
-                  art_width(kSprShotgun, 16, 16) && art_width(kSprKey, 8, 8) &&
+                  art_width(kSprShotgun, 16, 16) &&
                   art_width(kSprAmmo, 8, 8) && art_width(kSprMed, 8, 8) &&
                   art_width(kSprArmor, 8, 8) && art_width(kSprGun, 8, 8) &&
                   art_width(kSprExit, 8, 8) && art_width(kSprBolt, 5, 5);
@@ -219,79 +369,232 @@ void check_art() {
   }
 }
 
-void begin_level() {
+void clear_active_map_state() {
+  g_map = false;
   g_enemy_n = 0;
-  g_door_n = 0;
   g_pickup_n = 0;
   g_exit_x = -1;
   g_exit_y = -1;
-  memset(g_door_at, 0xFF, sizeof g_door_at);
+  g_gate_x = -1;
+  g_gate_y = -1;
+  g_gate_open = 0;
+  g_gate_started = false;
+  g_gate_open_started = 0;
+  memset(g_enemies, 0, sizeof g_enemies);
+  memset(g_pickups, 0, sizeof g_pickups);
   memset(g_shots, 0, sizeof g_shots);
-  g_hp = 100;
-  g_armor = 0;
-  g_ammo = 24;
-  g_key = false;
-  g_shotgun = false;
-  g_ang = 0;
   g_bob = 0;
   g_bob_phase = 0;
   g_kick = 0;
-  g_map = false;
+}
+
+bool find_open_floor(int &out_x, int &out_y) {
+  for (int attempt = 0; attempt < 256; ++attempt) {
+    const int x = 1 + (int)(rng_next() % 14u);
+    const int y = 1 + (int)(rng_next() % 14u);
+    if (map_at(x, y) != kCellFloor) continue;
+    const float dx = (float)x + 0.5f - g_px;
+    const float dy = (float)y + 0.5f - g_py;
+    if (dx * dx + dy * dy < 5.0f) continue;
+    bool occupied = false;
+    for (int i = 0; i < g_enemy_n; ++i) {
+      const float ex = (float)x + 0.5f - g_enemies[i].x;
+      const float ey = (float)y + 0.5f - g_enemies[i].y;
+      if (ex * ex + ey * ey < 1.0f) occupied = true;
+    }
+    for (int i = 0; i < g_pickup_n; ++i) {
+      const float px = (float)x + 0.5f - g_pickups[i].x;
+      const float py = (float)y + 0.5f - g_pickups[i].y;
+      if (g_pickups[i].live && px * px + py * py < 1.0f) occupied = true;
+    }
+    if (occupied) continue;
+    out_x = x;
+    out_y = y;
+    return true;
+  }
+  return false;
+}
+
+void add_enemy_at(int x, int y, Kind kind, uint32_t now) {
+  if (g_enemy_n >= kMaxEnemy) return;
+  Enemy &e = g_enemies[g_enemy_n];
+  e = {};
+  e.x = (float)x + 0.5f;
+  e.y = (float)y + 0.5f;
+  e.lx = e.x;
+  e.ly = e.y;
+  e.kind = kind;
+  e.hp = (kind == kBeast) ? 64 : 30;
+  e.alive = true;
+  e.next_act = now + (uint32_t)g_enemy_n * 350u;
+  ++g_enemy_n;
+}
+
+void add_pickup_at(int x, int y, char kind) {
+  if (g_pickup_n >= kMaxPickup) return;
+  Pickup &p = g_pickups[g_pickup_n++];
+  p.x = (float)x + 0.5f;
+  p.y = (float)y + 0.5f;
+  p.kind = kind;
+  p.live = true;
+}
+
+void ensure_map_requirements(uint32_t now) {
+  int x = 0;
+  int y = 0;
+  while (g_enemy_n < 2 && find_open_floor(x, y)) {
+    add_enemy_at(x, y, g_enemy_n == 0 ? kBeast : kGuard, now);
+  }
+  bool have_health = false;
+  bool have_ammo = false;
+  for (int i = 0; i < g_pickup_n; ++i) {
+    have_health |= g_pickups[i].kind == 'h';
+    have_ammo |= g_pickups[i].kind == 'a';
+  }
+  if (!have_health && find_open_floor(x, y)) add_pickup_at(x, y, 'h');
+  if (!have_ammo && find_open_floor(x, y)) add_pickup_at(x, y, 'a');
+}
+
+void activate_map() {
+  clear_active_map_state();
+  const uint32_t now = millis();
+  for (int y = 0; y < kMapH; ++y) {
+    for (int x = 0; x < kMapW; ++x) {
+      const uint8_t cell = map_at(x, y);
+      const float cx = (float)x + 0.5f;
+      const float cy = (float)y + 0.5f;
+      if (cell == kCellPlayerStart) {
+        g_px = cx;
+        g_py = cy;
+      } else if ((cell == kCellGuardSpawn || cell == kCellDemonSpawn) &&
+                 g_enemy_n < kMaxEnemy) {
+        add_enemy_at(x, y, cell == kCellDemonSpawn ? kBeast : kGuard, now);
+      } else if ((cell == kCellAmmo || cell == kCellMedkit ||
+                  cell == kCellArmor || cell == kCellShotgun) &&
+                 g_pickup_n < kMaxPickup) {
+        add_pickup_at(x, y, cell == kCellAmmo ? 'a' :
+                           cell == kCellMedkit ? 'h' :
+                           cell == kCellArmor ? 'v' : 'g');
+      } else if (cell == kCellExit) {
+        g_exit_x = x;
+        g_exit_y = y;
+        g_gate_x = x;
+        g_gate_y = y;
+      } else if (cell == kCellGate) {
+        g_gate_x = x;
+        g_gate_y = y;
+      }
+    }
+  }
+  ensure_map_requirements(now);
+  g_next_shot = now + 400;
+  g_mode = Mode::Play;
+  aim();
+  if (g_run_mode == RunMode::Infinite) {
+    Serial.printf("Infinite map %lu: %d enemies\n", (unsigned long)g_infinite_map, g_enemy_n);
+  } else {
+    Serial.printf("%s: %d enemies\n", kLevels[g_level].name, g_enemy_n);
+  }
+}
+
+void load_level(uint8_t level) {
+  if (level >= kLevelCount) {
+    g_mode = Mode::Won;
+    return;
+  }
+  g_run_mode = RunMode::Levels;
+  g_level = level;
+  g_ang = kLevels[g_level].start_angle;
+  activate_map();
+}
+
+void carve_h(int y, int x0, int x1) {
+  if (x0 > x1) { const int t = x0; x0 = x1; x1 = t; }
+  for (int x = x0; x <= x1; ++x) g_runtime_map[y][x] = kCellFloor;
+}
+
+void carve_v(int x, int y0, int y1) {
+  if (y0 > y1) { const int t = y0; y0 = y1; y1 = t; }
+  for (int y = y0; y <= y1; ++y) g_runtime_map[y][x] = kCellFloor;
+}
+
+void generate_infinite_map() {
+  clear_active_map_state();
+  g_run_mode = RunMode::Infinite;
+  g_level = 0;
+  g_exit_x = -1;
+  g_exit_y = -1;
+  g_px = 2.5f;
+  g_py = 1.5f;
+  memset(g_runtime_map, kCellBrickWall, sizeof g_runtime_map);
+  const int a = 4 + (int)(rng_next() % 4u);
+  const int b = 8 + (int)(rng_next() % 5u);
+  const int c = 3 + (int)(rng_next() % 4u);
+  carve_h(1, 2, a);
+  carve_v(a, 1, 4);
+  carve_h(4, a, b);
+  carve_v(b, 4, 7);
+  carve_h(7, c, b);
+  carve_v(c, 7, 11);
+  carve_h(11, c, 14);
+  carve_v(a + (int)(rng_next() % (uint32_t)(b - a + 1)), 2, 3);
+  carve_v(c + (int)(rng_next() % (uint32_t)(10 - c)), 8, 10);
+  g_runtime_map[1][2] = kCellPlayerStart;
+  g_runtime_map[11][13] = kCellGate;
+  g_px = 2.5f;
+  g_py = 1.5f;
+  g_ang = 0.0f;
+
+  const uint32_t count = (g_infinite_map - 1u) / 3u;
+  const uint8_t enemy_target = (uint8_t)(2u + (count > 4u ? 4u : count));
+  for (uint8_t i = 0; i < enemy_target; ++i) {
+    int x = 0, y = 0;
+    if (!find_open_floor(x, y)) break;
+    g_runtime_map[y][x] = (i == 0 || (rng_next() & 1u))
+                              ? kCellDemonSpawn : kCellGuardSpawn;
+  }
+  const uint8_t guaranteed_pickups[2] = {kCellMedkit, kCellAmmo};
+  for (uint8_t cell : guaranteed_pickups) {
+    int x = 0, y = 0;
+    if (find_open_floor(x, y)) g_runtime_map[y][x] = cell;
+  }
+  activate_map();
+}
+
+void begin_level() {
+  g_run_mode = RunMode::Levels;
+  g_hp = 100;
+  g_armor = 0;
+  g_ammo = 24;
+  g_shotgun = false;
   g_banner[0] = '\0';
   g_banner_until = 0;
   g_pain_until = 0;
   g_invuln = 0;
   g_flash_until = 0;
-  g_next_shot = millis() + 400;
+  g_score = 0;
+  g_infinite_map = 1;
   g_px = 1.5f;
   g_py = 1.5f;
+  load_level(0);
+}
 
-  for (int y = 0; y < kMapH; ++y) {
-    for (int x = 0; x < kMapW; ++x) {
-      const char c = kMap[y][x];
-      const float cx = (float)x + 0.5f;
-      const float cy = (float)y + 0.5f;
-      if (c == '@') {
-        g_px = cx;
-        g_py = cy;
-      } else if ((c == 'e' || c == 'm') && g_enemy_n < kMaxEnemy) {
-        Enemy &e = g_enemies[g_enemy_n];
-        e = {};
-        e.x = cx;
-        e.y = cy;
-        e.lx = cx;
-        e.ly = cy;
-        e.kind = (c == 'm') ? kBeast : kGuard;
-        e.hp = (e.kind == kBeast) ? 64 : 30;
-        e.alive = true;
-        e.next_act = millis() + (uint32_t)g_enemy_n * 350u;
-        ++g_enemy_n;
-      } else if ((c == 'd' || c == 'r') && g_door_n < kMaxDoor) {
-        Door &d = g_doors[g_door_n];
-        d = {};
-        d.x = (uint8_t)x;
-        d.y = (uint8_t)y;
-        d.red = (c == 'r');
-        g_door_at[y][x] = (uint8_t)g_door_n;
-        ++g_door_n;
-      } else if ((c == 'a' || c == 'h' || c == 'v' || c == 'g' || c == 'k') &&
-                 g_pickup_n < kMaxPickup) {
-        Pickup &p = g_pickups[g_pickup_n];
-        p.x = cx;
-        p.y = cy;
-        p.kind = c;
-        p.live = true;
-        ++g_pickup_n;
-      } else if (c == 'x') {
-        g_exit_x = x;
-        g_exit_y = y;
-      }
-    }
-  }
-
-  g_mode = Mode::Play;
-  aim();
-  Serial.printf("entry: %d enemies, %d doors\n", g_enemy_n, g_door_n);
+void begin_infinite() {
+  g_run_mode = RunMode::Infinite;
+  g_hp = 100;
+  g_armor = 0;
+  g_ammo = 24;
+  g_shotgun = false;
+  g_banner[0] = '\0';
+  g_banner_until = 0;
+  g_pain_until = 0;
+  g_invuln = 0;
+  g_flash_until = 0;
+  g_score = 0;
+  g_infinite_map = 1;
+  g_rng ^= millis() + micros() + 0x9E3779B9u;
+  if (g_rng == 0) g_rng = 1;
+  generate_infinite_map();
 }
 
 void pixel(uint8_t *buf, int x, int y, bool on) {
@@ -307,6 +610,16 @@ void pixel(uint8_t *buf, int x, int y, bool on) {
   }
 }
 
+void draw_hud_icon(uint8_t *buf, int x, int y, const char *const *rows) {
+  for (int row = 0; row < 7; ++row) {
+    for (int col = 0; col < 7; ++col) {
+      if (rows[row][col] == '#') {
+        pixel(buf, x + col, y + row, true);
+      }
+    }
+  }
+}
+
 void text_center(int y, const char *s) {
   const int w = oled.getStrWidth(s);
   int x = (128 - w) / 2;
@@ -316,14 +629,64 @@ void text_center(int y, const char *s) {
   oled.drawStr(x, y, s);
 }
 
+bool title_logo_pixel(int x, int y) {
+  if (x < 0 || x >= 112 || y < 0 || y >= 48) {
+    return false;
+  }
+  const uint8_t packed = kTitleLogo[y * 14 + x / 8];
+  return (packed & (1u << (x & 7))) != 0;
+}
+
+void draw_gradient_logo() {
+  constexpr int kLogoX = 8;
+  constexpr int kLogoY = 2;
+  for (int y = 0; y < 48; ++y) {
+    // Ordered dithering fades the logo's interior from clear at the top to
+    // fully filled at the bottom. Its silhouette stays crisp and solid.
+    const int fill_level = (y * 16) / 47;
+    for (int x = 0; x < 112; ++x) {
+      if (!title_logo_pixel(x, y)) {
+        continue;
+      }
+      bool border = false;
+      for (int dy = -1; dy <= 1 && !border; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+          if ((dx != 0 || dy != 0) && !title_logo_pixel(x + dx, y + dy)) {
+            border = true;
+            break;
+          }
+        }
+      }
+      const uint8_t rank = kBayer4x4[(y & 3) * 4 + (x & 3)];
+      if (border || rank < fill_level) {
+        oled.drawPixel(kLogoX + x, kLogoY + y);
+      }
+    }
+  }
+}
+
 void draw_title() {
   oled.clearBuffer();
-  text_center(2, "MINI DOOM");
-  text_center(14, "entry");
-  text_center(26, "stick moves");
-  text_center(35, "touch fires");
-  text_center(44, "click door/map");
-  text_center(54, "TOUCH START");
+  draw_gradient_logo();
+  text_center(56, "CLICK TO CONTINUE");
+  oled.sendBuffer();
+}
+
+void draw_menu() {
+  oled.clearBuffer();
+  // The OLED uses top-positioned 5x7 text, so keep each row clear of its frame.
+  oled.drawStr(43, 1, "DOOM MODE");
+  oled.drawHLine(22, 10, 84);
+  if (g_menu_choice == 0) oled.drawFrame(17, 15, 94, 13);
+  if (g_menu_choice == 1) oled.drawFrame(17, 31, 94, 13);
+  oled.drawStr(27, 18, g_menu_choice == 0 ? ">" : " ");
+  oled.drawStr(41, 18, "LEVELS");
+  oled.drawStr(27, 34, g_menu_choice == 1 ? ">" : " ");
+  oled.drawStr(41, 34, "INFINITE");
+  oled.drawHLine(22, 46, 84);
+  char best[20];
+  snprintf(best, sizeof best, "BEST %lu", (unsigned long)g_best_score);
+  text_center(49, best);
   oled.sendBuffer();
 }
 
@@ -338,21 +701,37 @@ void fill_box(uint8_t *buf, int x0, int y0, int w, int h) {
 void draw_map() {
   oled.clearBuffer();
   uint8_t *buf = oled.getBufferPtr();
-  constexpr int kCell = 4;
-  const int ox = (128 - kMapW * kCell) / 2;
-  const int oy = (64 - kMapH * kCell) / 2;
+  constexpr int kCell = 3;
+  constexpr int kMapX = 40;
+  constexpr int kMapY = 8;
+  constexpr int kMapPixels = kMapW * kCell;
+
+  // Framed center map with compact status panels on either side.
+  for (int i = 0; i < kMapPixels + 2; ++i) {
+    pixel(buf, kMapX - 1 + i, kMapY - 1, true);
+    pixel(buf, kMapX - 1 + i, kMapY + kMapPixels, true);
+  }
+  for (int i = 0; i < kMapPixels + 2; ++i) {
+    pixel(buf, kMapX - 1, kMapY - 1 + i, true);
+    pixel(buf, kMapX + kMapPixels, kMapY - 1 + i, true);
+  }
+
   for (int y = 0; y < kMapH; ++y) {
     for (int x = 0; x < kMapW; ++x) {
-      const char c = kMap[y][x];
-      const int x0 = ox + x * kCell;
-      const int y0 = oy + y * kCell;
-      if (c == '#') {
-        fill_box(buf, x0, y0, 3, 3);
-      } else if (c == 'd' || c == 'r') {
-        const uint8_t id = g_door_at[y][x];
-        if (id != 0xFF && g_doors[id].open < 140) {
-          fill_box(buf, x0, y0 + 1, 3, 2);
-        }
+      const uint8_t cell = map_at(x, y);
+      const int x0 = kMapX + x * kCell;
+      const int y0 = kMapY + y * kCell;
+      if (cell >= 0x10 && cell <= 0x1F) {
+        fill_box(buf, x0, y0, kCell, kCell);
+      } else if (cell == kCellGate || cell == kCellExit) {
+        pixel(buf, x0, y0, true);
+        pixel(buf, x0 + 1, y0, true);
+        pixel(buf, x0 + 2, y0, true);
+        pixel(buf, x0, y0 + 1, true);
+        pixel(buf, x0 + 2, y0 + 1, true);
+        pixel(buf, x0, y0 + 2, true);
+        pixel(buf, x0 + 1, y0 + 2, true);
+        pixel(buf, x0 + 2, y0 + 2, true);
       }
     }
   }
@@ -360,36 +739,65 @@ void draw_map() {
     if (!g_pickups[i].live) {
       continue;
     }
-    const int x = ox + (int)(g_pickups[i].x * kCell);
-    const int y = oy + (int)(g_pickups[i].y * kCell);
+    const int x = kMapX + (int)(g_pickups[i].x * kCell);
+    const int y = kMapY + (int)(g_pickups[i].y * kCell);
     pixel(buf, x, y, true);
-    if (g_pickups[i].kind == 'k') {
-      pixel(buf, x + 1, y, true);
-    }
   }
-  if (g_exit_x >= 0 && ((millis() / 200) & 1u) == 0) {
-    pixel(buf, ox + g_exit_x * kCell + 1, oy + g_exit_y * kCell + 1, true);
-  }
+  int alive_enemies = 0;
   for (int i = 0; i < g_enemy_n; ++i) {
     if (!g_enemies[i].alive) {
       continue;
     }
-    const int x = ox + (int)(g_enemies[i].x * kCell);
-    const int y = oy + (int)(g_enemies[i].y * kCell);
+    ++alive_enemies;
+    const int x = kMapX + (int)(g_enemies[i].x * kCell);
+    const int y = kMapY + (int)(g_enemies[i].y * kCell);
     if (g_enemies[i].kind == kBeast) {
-      fill_box(buf, x, y, 2, 2);
+      fill_box(buf, x - 1, y - 1, 3, 3);
     } else {
       pixel(buf, x, y, true);
     }
   }
-  const int px = ox + (int)(g_px * kCell);
-  const int py = oy + (int)(g_py * kCell);
-  pixel(buf, px, py, true);
-  const int fx = (int)lroundf(cosf(g_ang));
-  const int fy = (int)lroundf(sinf(g_ang));
-  pixel(buf, px + fx, py + fy, true);
-  oled.drawStr(1, 2, "MAP");
-  oled.drawStr(1, 54, "click");
+  const int px = kMapX + (int)(g_px * kCell);
+  const int py = kMapY + (int)(g_py * kCell);
+  if (((millis() / 220) & 1u) == 0) {
+    pixel(buf, px, py, true);
+    const int fx = (int)lroundf(cosf(g_ang));
+    const int fy = (int)lroundf(sinf(g_ang));
+    pixel(buf, px + fx, py + fy, true);
+  }
+
+  char label[12];
+  snprintf(label, sizeof label, "MAP %u/5", (unsigned)(g_level + 1));
+  oled.drawStr(2, 0, label);
+  oled.drawStr(80, 0, "SW CLOSE");
+
+  oled.drawStr(2, 10, "YOU");
+  pixel(buf, 3, 21, true);
+  pixel(buf, 4, 21, true);
+  char enemy_label[8];
+  snprintf(enemy_label, sizeof enemy_label, "EN %02d", alive_enemies);
+  oled.drawStr(2, 29, enemy_label);
+  oled.drawStr(2, 41, "GOAL");
+  oled.drawStr(2, 50, "GATE");
+
+  oled.drawStr(94, 10, "HP");
+  for (int x = 0; x < 30; ++x) {
+    pixel(buf, 94 + x, 19, true);
+    pixel(buf, 94 + x, 23, true);
+  }
+  for (int y = 19; y <= 23; ++y) {
+    pixel(buf, 94, y, true);
+    pixel(buf, 123, y, true);
+  }
+  const int hp_fill = (g_hp * 26) / 100;
+  fill_box(buf, 96, 21, hp_fill, 1);
+  char stat[8];
+  snprintf(stat, sizeof stat, "%3d", g_hp);
+  oled.drawStr(94, 26, stat);
+  snprintf(stat, sizeof stat, "AM %02d", g_ammo);
+  oled.drawStr(94, 36, stat);
+  snprintf(stat, sizeof stat, "AR %02d", g_armor);
+  oled.drawStr(94, 47, stat);
   oled.sendBuffer();
 }
 
@@ -400,19 +808,16 @@ void dither_column(uint8_t *buf, int x, int y0, int y1) {
   if (y1 > kViewH) {
     y1 = kViewH;
   }
-  const int horizon = kHorizon + g_bob;
+  const int horizon = camera_horizon();
   for (int y = y0; y < y1; ++y) {
-    int band = y - horizon;
-    if (band < 0) {
-      band = -band;
-    }
-    int step = 5;
-    if (band > 18) {
-      step = 2;
-    } else if (band > 9) {
-      step = 3;
-    }
-    if (((x * 3 + y) % step) == 0) {
+    const bool floor = y >= horizon;
+    const int band = floor ? y - horizon : horizon - y;
+    const uint8_t threshold = floor
+        ? (band > 24 ? 13 : (band > 14 ? 10 : (band > 6 ? 7 : 4)))
+        : (band > 18 ? 8 : (band > 9 ? 5 : 3));
+    const uint8_t rank = kBayer4x4[(y & 3) * 4 + (x & 3)];
+    const bool floor_seam = floor && band > 5 && (band % 8 == 0) && ((x & 3) != 0);
+    if (rank < threshold || floor_seam) {
       pixel(buf, x, y, true);
     }
   }
@@ -435,6 +840,7 @@ void paint_tex(uint8_t *buf, int x, int y0, int y1, int span0, int span_h,
   if (tex_x > 15) {
     tex_x = 15;
   }
+  const uint8_t threshold = (shade >= 2) ? 12 : ((shade == 1) ? 8 : 0);
   for (int y = y0; y < y1; ++y) {
     int ty = (y - span0) * 16 / span_h;
     if (ty < 0) {
@@ -446,10 +852,8 @@ void paint_tex(uint8_t *buf, int x, int y0, int y1, int span0, int span_h,
     if (tex[ty][tex_x] != '#') {
       continue;
     }
-    if (shade == 1 && ((x ^ y) & 1)) {
-      continue;
-    }
-    if (shade >= 2 && ((x + y) & 3)) {
+    const uint8_t rank = kBayer4x4[(y & 3) * 4 + (x & 3)];
+    if (rank < threshold) {
       continue;
     }
     pixel(buf, x, y, true);
@@ -508,8 +912,9 @@ void draw_bill(uint8_t *buf, const Bill &b) {
   if (sprite_w < 1) {
     sprite_w = 1;
   }
-  const int horizon = kHorizon + g_bob;
-  const int bottom = horizon + column_h / 2;
+  const int horizon = camera_horizon();
+  const float local_eye_z = camera_z();
+  const int bottom = horizon + (int)(local_eye_z * (float)column_h);
   const int top = bottom - sprite_h;
   const int left = (int)(kViewW * 0.5f * (1.0f + tx / ty)) - sprite_w / 2;
   const uint16_t sz = (uint16_t)fminf(ty * 256.0f, 65535.0f);
@@ -566,7 +971,7 @@ void stamp(uint8_t *buf, const char *const *rows, int w, int h, int ox, int oy) 
 
 void draw_crosshair(uint8_t *buf) {
   const int x = kViewW / 2;
-  const int y = kHorizon + g_bob;
+  const int y = camera_horizon();
   for (int i = -3; i <= 3; ++i) {
     if (i == 0) {
       continue;
@@ -618,7 +1023,7 @@ void draw_world() {
 
     int side = 0;
     int hit = 0;
-    int door_i = -1;
+    uint8_t hit_cell = kCellBrickWall;
     for (int n = 0; n < 48; ++n) {
       if (side_x < side_y) {
         side_x += delta_x;
@@ -630,21 +1035,16 @@ void draw_world() {
         side = 1;
       }
       if (map_x < 0 || map_y < 0 || map_x >= kMapW || map_y >= kMapH) {
+        hit_cell = kCellBrickWall;
         hit = 1;
         break;
       }
-      const char c = kMap[map_y][map_x];
-      if (c == '#') {
+      const uint8_t cell = map_at(map_x, map_y);
+      if ((cell >= 0x10 && cell <= 0x1F) ||
+          ((cell == kCellGate || cell == kCellExit) && g_gate_open < 100)) {
+        hit_cell = cell;
         hit = 1;
         break;
-      }
-      if (c == 'd' || c == 'r') {
-        const uint8_t id = g_door_at[map_y][map_x];
-        if (id != 0xFF && g_doors[id].open < 230) {
-          hit = 2;
-          door_i = id;
-          break;
-        }
       }
     }
 
@@ -659,7 +1059,9 @@ void draw_world() {
     }
     g_z[col] = (uint16_t)fminf(perp * 256.0f, 65534.0f);
 
-    float wall_x = (side == 0) ? (g_py + perp * ray_y) : (g_px + perp * ray_x);
+    const float hit_x = g_px + perp * ray_x;
+    const float hit_y = g_py + perp * ray_y;
+    float wall_x = (side == 0) ? hit_y : hit_x;
     wall_x -= floorf(wall_x);
     int tex_x = (int)(wall_x * 16.0f);
     if (side == 0 && ray_x > 0.0f) {
@@ -679,24 +1081,20 @@ void draw_world() {
       ++shade;
     }
 
-    const int horizon = kHorizon + g_bob;
     const int line_h = (int)((float)kViewH / perp);
-    const int y_start = horizon - line_h / 2;
-    const int y_end = y_start + line_h;
+    const int horizon = camera_horizon();
+    const float local_eye_z = camera_z();
+    const int y_start = horizon + (int)((local_eye_z - 1.0f) * (float)line_h);
+    const int y_end = horizon + (int)(local_eye_z * (float)line_h);
+    const bool gate_hit = hit_cell == kCellGate || hit_cell == kCellExit;
+    const int gate_lift = gate_hit ? (line_h * (int)g_gate_open) / 100 : 0;
+    const int gate_bottom = y_end - gate_lift;
+    const char *const *texture = gate_hit ? kTexGate : kTexWall;
     dither_column(buf, col, 0, y_start);
-    dither_column(buf, col, y_end, kViewH);
-
-    const char *const *tex = kTexBrick;
-    int vis_h = line_h;
-    if (hit == 2 && door_i >= 0) {
-      tex = g_doors[door_i].red ? kTexRed : kTexDoor;
-      vis_h = line_h * (255 - g_doors[door_i].open) / 255;
-    } else if (map_x >= 0 && map_y >= 0 && map_x < kMapW && map_y < kMapH) {
-      tex = kWalls[(map_x * 3 + map_y) & 3];
-    }
-    paint_tex(buf, col, y_start, y_start + vis_h, y_start, line_h, tex, tex_x, shade);
+    dither_column(buf, col, gate_hit ? gate_bottom : y_end, kViewH);
+    paint_tex(buf, col, y_start, gate_hit ? gate_bottom : y_end,
+              y_start - gate_lift, line_h, texture, tex_x, shade);
   }
-
   g_bill_n = 0;
   const uint32_t now = millis();
   const float bob = sinf((float)now * 0.006f) * 0.05f;
@@ -705,10 +1103,24 @@ void draw_world() {
     const bool flash = e.alive && now < e.flash_until;
     if (!e.alive) {
       add_bill(e.x, e.y, kSprCorpse, 16, 16, 88, false);
-    } else if (e.kind == kBeast) {
-      add_bill(e.x, e.y, kSprBeast, 16, 16, 96, flash);
     } else {
-      add_bill(e.x, e.y, kSprGuard, 16, 16, 80, flash);
+      const bool attacking = now < e.attack_until;
+      const bool walking = now < e.saw_until && ((now / 220u + (uint32_t)i) & 1u);
+      const char *const *rows;
+      int sprite_w = 16;
+      if (e.kind == kBeast) {
+        if (attacking) {
+          rows = kSprBeastAttack;
+        } else if (walking) {
+          rows = kSprBeastWalk;
+        } else {
+          rows = kSprBeast;
+        }
+        add_bill(e.x, e.y, rows, sprite_w, 16, 96, flash);
+      } else {
+        rows = attacking ? kSprGuardAttack : (walking ? kSprGuardWalk : kSprGuard);
+        add_bill(e.x, e.y, rows, 16, 16, 80, flash);
+      }
     }
   }
   for (int i = 0; i < g_pickup_n; ++i) {
@@ -722,8 +1134,6 @@ void draw_world() {
       rows = kSprArmor;
     } else if (g_pickups[i].kind == 'g') {
       rows = kSprGun;
-    } else if (g_pickups[i].kind == 'k') {
-      rows = kSprKey;
     }
     add_bill(g_pickups[i].x, g_pickups[i].y + bob, rows, 8, 8, 40, false);
   }
@@ -755,28 +1165,31 @@ void draw_world() {
   const int gun_y = kViewH - 16 - g_kick + g_bob / 2;
   stamp(buf, gun, 16, 16, 56, gun_y);
   if (now < g_flash_until) {
-    const int mx = 64;
-    const int my = gun_y + 5;
-    pixel(buf, mx, my, true);
-    pixel(buf, mx - 1, my, true);
-    pixel(buf, mx + 1, my, true);
-    pixel(buf, mx, my - 1, true);
-    pixel(buf, mx, my - 2, true);
-    if (gun == kSprShotgun) {
-      pixel(buf, mx - 3, my, true);
-      pixel(buf, mx + 3, my, true);
+    static const char *const kMuzzleFlash[] = {
+        "...#...", "..###..", ".#####.", "###.###", ".#####.", "..###..", "...#...",
+    };
+    const int flash_x = 61;
+    const int flash_y = gun_y - 2;
+    for (int row = 0; row < 7; ++row) {
+      for (int col = 0; col < 7; ++col) {
+        if (kMuzzleFlash[row][col] == '#') {
+          pixel(buf, flash_x + col, flash_y + row, true);
+        }
+      }
     }
   }
 
   if (now < g_banner_until && g_banner[0] != '\0') {
     const int w = oled.getStrWidth(g_banner);
     const int x = (128 - w) / 2;
-    for (int y = 19; y < 30; ++y) {
+    // Keep the level label in the sky band; a center-screen banner hides
+    // the horizon and makes the newly loaded floor look missing.
+    for (int y = 0; y < 9; ++y) {
       for (int xx = x - 2; xx < x + w + 2; ++xx) {
         pixel(buf, xx, y, false);
       }
     }
-    oled.drawStr(x, 21, g_banner);
+    oled.drawStr(x, 1, g_banner);
   }
 
   if (g_mode == Mode::Dead) {
@@ -786,7 +1199,7 @@ void draw_world() {
       }
     }
     text_center(20, "YOU DIED");
-    text_center(32, "touch to retry");
+    text_center(32, "fire to retry");
   } else if (g_mode == Mode::Won) {
     for (int y = 16; y < 44; ++y) {
       for (int x = 10; x < 118; ++x) {
@@ -794,7 +1207,7 @@ void draw_world() {
       }
     }
     text_center(20, "CLEARED");
-    text_center(32, "touch to run again");
+    text_center(32, "fire to run again");
   }
 
   if (now < g_pain_until) {
@@ -806,10 +1219,51 @@ void draw_world() {
   for (int x = 0; x < 128; ++x) {
     pixel(buf, x, kViewH, true);
   }
-  char line[28];
+  static const char *const kHealthIcon[] = {
+      ".##.##.", "#######", "#######", ".#####.", "..###..", "...#...", ".......",
+  };
+  static const char *const kArmorIcon[] = {
+      "...#...", "..###..", ".#####.", "#######", ".#####.", "..###..", "...#...",
+  };
+  static const char *const kAmmoIcon[] = {
+      "..###..", "..###..", ".#####.", "#######", "..###..", "..###..", "..###..",
+  };
+  draw_hud_icon(buf, 2, kViewH + 1, kHealthIcon);
+  draw_hud_icon(buf, 42, kViewH + 1, kArmorIcon);
+  draw_hud_icon(buf, 83, kViewH + 1, kAmmoIcon);
+  char health[4];
+  char armor[4];
+  char ammo[5];
+  snprintf(health, sizeof health, "%3d", g_hp);
+  snprintf(armor, sizeof armor, "%3d", g_armor);
   const char weapon = (g_shotgun && g_ammo >= 2) ? 'S' : 'P';
-  snprintf(line, sizeof line, "H%3d A%3d %c%2d%s", g_hp, g_armor, weapon, g_ammo, g_key ? " K" : "");
-  oled.drawStr(0, kViewH + 1, line);
+  snprintf(ammo, sizeof ammo, "%c%02d", weapon, g_ammo);
+  oled.drawStr(11, kViewH + 1, health);
+  oled.drawStr(51, kViewH + 1, armor);
+  oled.drawStr(92, kViewH + 1, ammo);
+  if (g_run_mode == RunMode::Infinite) {
+    // Keep infinite-run progress in the sky band, clear of the status strip.
+    for (int y = 0; y < 9; ++y) {
+      for (int x = 0; x < 62; ++x) pixel(buf, x, y, false);
+    }
+    char progress[24];
+    snprintf(progress, sizeof progress, "I%lu S%lu",
+             (unsigned long)g_infinite_map, (unsigned long)g_score);
+    oled.drawStr(2, 1, progress);
+  }
+  if (g_transitioning) {
+    uint32_t elapsed = now - g_transition_started;
+    if (elapsed > 320u) elapsed = 320u;
+    const uint8_t step = (uint8_t)(elapsed * 16u / 320u);
+    const uint8_t erase_below = g_transition_phase == TransitionPhase::Out
+                                    ? step : (uint8_t)(16u - step);
+    for (int y = 0; y < 64; ++y) {
+      for (int x = 0; x < 128; ++x) {
+        const uint8_t rank = kBayer4x4[(y & 3) * 4 + (x & 3)];
+        if (rank < erase_below) pixel(buf, x, y, false);
+      }
+    }
+  }
   oled.sendBuffer();
 }
 
@@ -839,6 +1293,41 @@ void try_move(float dx, float dy) {
   if (stuck || !player_blocked(g_px, g_py + dy)) {
     g_py += dy;
   }
+}
+
+void update_gate(uint32_t now) {
+  if (g_gate_x < 0 || g_gate_open >= 100) return;
+  const float dx = (float)g_gate_x + 0.5f - g_px;
+  const float dy = (float)g_gate_y + 0.5f - g_py;
+  if (!g_gate_started && dx * dx + dy * dy <= 3.2f * 3.2f) {
+    g_gate_started = true;
+    g_gate_open_started = now;
+    say("GATE ACTIVATED", 1000);
+  }
+  if (g_gate_started) {
+    const uint32_t elapsed = now - g_gate_open_started;
+    g_gate_open = elapsed >= 950 ? 100 : (uint8_t)(elapsed * 100u / 950u);
+    if (g_gate_open == 100) say("GATE OPEN", 700);
+  }
+}
+
+bool use_gate_if_entered(int old_x, int old_y) {
+  const int new_x = (int)floorf(g_px);
+  const int new_y = (int)floorf(g_py);
+  const uint8_t cell = map_at(new_x, new_y);
+  const bool level_exit = cell == kCellGate || cell == kCellExit;
+  if (!level_exit || g_gate_open < 100 ||
+      (old_x == new_x && old_y == new_y)) {
+    return false;
+  }
+
+  g_transitioning = true;
+  g_transition_to_won = g_run_mode == RunMode::Levels &&
+                        g_level + 1 >= kLevelCount;
+  g_transition_phase = TransitionPhase::Out;
+  g_transition_started = millis();
+  g_map = false;
+  return true;
 }
 
 bool enemy_blocked(int self, float x, float y) {
@@ -890,6 +1379,7 @@ void hurt(int dmg) {
   if (g_hp <= 0) {
     g_hp = 0;
     g_mode = Mode::Dead;
+    save_best_score();
   }
 }
 
@@ -930,6 +1420,7 @@ void damage_enemy(int index, int amount) {
   e.flash_until = millis() + 80;
   if (e.hp <= 0) {
     e.alive = false;
+    if (g_run_mode == RunMode::Infinite) add_score(50);
   }
 }
 
@@ -970,90 +1461,6 @@ void spawn_shot(int owner, float x, float y, float dx, float dy, float dist) {
   }
 }
 
-bool cell_busy(int x, int y) {
-  if ((int)floorf(g_px) == x && (int)floorf(g_py) == y) {
-    return true;
-  }
-  for (int i = 0; i < g_enemy_n; ++i) {
-    if (!g_enemies[i].alive) {
-      continue;
-    }
-    if ((int)floorf(g_enemies[i].x) == x && (int)floorf(g_enemies[i].y) == y) {
-      return true;
-    }
-  }
-  return false;
-}
-
-void tick_doors(uint32_t now, float dt) {
-  int step = (int)(dt * 460.0f);
-  if (step < 1) {
-    step = 1;
-  }
-  for (int i = 0; i < g_door_n; ++i) {
-    Door &d = g_doors[i];
-    if (d.vel > 0) {
-      const int open = (int)d.open + step;
-      if (open >= 255) {
-        d.open = 255;
-        d.vel = 0;
-        d.hold_until = now + 2500;
-      } else {
-        d.open = (uint8_t)open;
-      }
-    } else if (d.vel < 0) {
-      const int open = (int)d.open - step;
-      if (open <= 0) {
-        d.open = 0;
-        d.vel = 0;
-      } else {
-        d.open = (uint8_t)open;
-      }
-    } else if (d.open == 255 && now >= d.hold_until && !cell_busy(d.x, d.y)) {
-      d.vel = -1;
-    }
-  }
-}
-
-Door *door_ahead() {
-  for (float dist = 0.3f; dist <= 0.95f; dist += 0.25f) {
-    const int x = (int)floorf(g_px + g_dir_x * dist);
-    const int y = (int)floorf(g_py + g_dir_y * dist);
-    if (x < 0 || y < 0 || x >= kMapW || y >= kMapH) {
-      continue;
-    }
-    const char c = kMap[y][x];
-    if (c != 'd' && c != 'r') {
-      continue;
-    }
-    const uint8_t id = g_door_at[y][x];
-    if (id != 0xFF) {
-      return &g_doors[id];
-    }
-  }
-  return nullptr;
-}
-
-void operate(Door &door) {
-  if (door.vel > 0) {
-    door.vel = -1;
-    return;
-  }
-  if (door.vel < 0) {
-    door.vel = 1;
-    return;
-  }
-  if (door.open == 0) {
-    if (door.red && !g_key) {
-      say("NEED KEY", 800);
-      return;
-    }
-    door.vel = 1;
-  } else {
-    door.vel = -1;
-  }
-}
-
 void take_pickups() {
   for (int i = 0; i < g_pickup_n; ++i) {
     Pickup &p = g_pickups[i];
@@ -1089,9 +1496,6 @@ void take_pickups() {
       if (g_armor > 100) {
         g_armor = 100;
       }
-    } else if (p.kind == 'k') {
-      g_key = true;
-      say("RED KEY", 900);
     } else if (p.kind == 'g') {
       g_shotgun = true;
       g_ammo += 8;
@@ -1162,7 +1566,7 @@ void think_enemies(uint32_t now, float dt) {
       if (see && pdist < 5.0f && pdist > 1.3f && now >= e.next_act && !shot_from(i)) {
         spawn_shot(i, e.x, e.y, pdx, pdy, pdist);
         e.next_act = now + 1100;
-        e.flash_until = now + 120;
+        e.attack_until = now + 180;
       }
     } else if (hunt) {
       const float dx = (see ? g_px : e.lx) - e.x;
@@ -1171,7 +1575,7 @@ void think_enemies(uint32_t now, float dt) {
       if (see && pdist < 0.75f && now >= e.next_act) {
         hurt(15);
         e.next_act = now + 700;
-        e.flash_until = now + 140;
+        e.attack_until = now + 180;
       }
     }
   }
@@ -1184,7 +1588,8 @@ void player_fire(uint32_t now, const Input &input) {
   if (!input.fire_held || now < g_next_shot || g_mode != Mode::Play) {
     return;
   }
-  if (g_shotgun && g_ammo >= 2) {
+  const bool shotgun_shot = g_shotgun && g_ammo >= 2;
+  if (shotgun_shot) {
     const float spread[] = {-0.18f, -0.09f, 0.0f, 0.09f, 0.18f};
     for (float s : spread) {
       const int hit = hitscan(g_ang + s, 0.16f);
@@ -1208,8 +1613,8 @@ void player_fire(uint32_t now, const Input &input) {
     g_next_shot = now + 250;
     return;
   }
-  g_kick = 6;
-  g_flash_until = now + 70;
+  g_kick = shotgun_shot ? 9 : 6;
+  g_flash_until = now + 80;
 }
 
 }  // namespace
@@ -1217,6 +1622,13 @@ void player_fire(uint32_t now, const Input &input) {
 void game_setup() {
   check_art();
   g_mode = Mode::Title;
+  g_rng = millis() ^ micros() ^ 0xA341316Cu;
+  if (g_rng == 0) g_rng = 1;
+  Preferences prefs;
+  if (prefs.begin("minidoom", true)) {
+    g_best_score = prefs.getUInt("inf_best", 0);
+    prefs.end();
+  }
 }
 
 void game_step(const Input &input) {
@@ -1231,9 +1643,58 @@ void game_step(const Input &input) {
     dt = 0.0f;
   }
 
+  if (g_transitioning) {
+    if (now - g_transition_started >= 320u) {
+      if (g_transition_phase == TransitionPhase::Out) {
+        if (g_transition_to_won) {
+          g_mode = Mode::Won;
+        } else if (g_run_mode == RunMode::Infinite) {
+          add_score(100);
+          save_best_score();
+          ++g_infinite_map;
+          generate_infinite_map();
+          char label[16];
+          snprintf(label, sizeof label, "MAP %lu", (unsigned long)g_infinite_map);
+          say(label, 1300);
+        } else {
+          load_level((uint8_t)(g_level + 1));
+          say(kLevels[g_level].name, 1300);
+        }
+        g_transition_phase = TransitionPhase::In;
+        g_transition_started = now;
+      } else {
+        g_transitioning = false;
+      }
+    }
+    return;
+  }
+
+  if (g_mode == Mode::Title) {
+    if (input.use_edge || input.fire_edge) g_mode = Mode::Menu;
+    return;
+  }
+  if (g_mode == Mode::Menu) {
+    if (now >= g_menu_repeat_at && abs(input.axis_y) > 550) {
+      g_menu_choice = input.axis_y < 0 ? 0 : 1;
+      g_menu_repeat_at = now + 220;
+    }
+    if (input.use_edge) {
+      g_mode = Mode::Title;
+      return;
+    }
+    if (input.fire_edge) {
+      if (g_menu_choice == 0) begin_level();
+      else begin_infinite();
+    }
+    return;
+  }
+  if (g_mode == Mode::Dead || g_mode == Mode::Won) {
+    if (input.fire_edge || input.use_edge) g_mode = Mode::Menu;
+    return;
+  }
   if (g_mode != Mode::Play) {
     if (input.fire_edge || input.use_edge) {
-      begin_level();
+      g_mode = Mode::Menu;
     }
     return;
   }
@@ -1255,15 +1716,21 @@ void game_step(const Input &input) {
   }
   aim();
   const float step = forward * 2.15f * dt;
+  const int old_cell_x = (int)floorf(g_px);
+  const int old_cell_y = (int)floorf(g_py);
   try_move(g_dir_x * step, g_dir_y * step);
+  update_gate(now);
+  if (use_gate_if_entered(old_cell_x, old_cell_y)) {
+    return;
+  }
   if (fabsf(forward) > 0.12f) {
     g_bob_phase += dt * 12.0f * fabsf(forward);
   }
   g_bob = (int)(sinf(g_bob_phase) * 2.0f);
 
-  tick_doors(now, dt);
   take_pickups();
-  if (g_exit_x >= 0 && (int)floorf(g_px) == g_exit_x && (int)floorf(g_py) == g_exit_y) {
+  if (g_exit_x >= 0 && (int)floorf(g_px) == g_exit_x &&
+      (int)floorf(g_py) == g_exit_y) {
     g_mode = Mode::Won;
     return;
   }
@@ -1277,17 +1744,17 @@ void game_step(const Input &input) {
   }
   player_fire(now, input);
   if (input.use_edge) {
-    if (Door *door = door_ahead()) {
-      operate(*door);
-    } else {
-      g_map = true;
-    }
+    g_map = true;
   }
 }
 
 void game_draw() {
   if (g_mode == Mode::Title) {
     draw_title();
+    return;
+  }
+  if (g_mode == Mode::Menu) {
+    draw_menu();
     return;
   }
   if (g_map && g_mode == Mode::Play) {
