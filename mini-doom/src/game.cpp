@@ -6,6 +6,7 @@
 
 #include <Arduino.h>
 #include <math.h>
+#include <Preferences.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -194,12 +195,21 @@ struct Bill {
   bool flash;
 };
 
-enum class Mode : uint8_t { Title, Play, Dead, Won };
+enum class Mode : uint8_t { Title, Menu, Play, Dead, Won };
+enum class RunMode : uint8_t { Levels, Infinite };
 
 Mode g_mode = Mode::Title;
+RunMode g_run_mode = RunMode::Levels;
 bool g_map = false;
 uint8_t g_level = 0;
 bool g_has_ramp = false;
+uint8_t g_runtime_map[kMapH][kMapW];
+uint32_t g_rng = 1;
+uint32_t g_score = 0;
+uint32_t g_best_score = 0;
+uint32_t g_infinite_map = 1;
+uint32_t g_menu_repeat_at = 0;
+uint8_t g_menu_choice = 0;
 float g_px = 1.5f;
 float g_py = 1.5f;
 float g_ang = 0;
@@ -232,6 +242,35 @@ uint16_t g_z[kViewW];
 Bill g_bills[24];
 int g_bill_n = 0;
 
+uint32_t rng_next() {
+  uint32_t x = g_rng;
+  x ^= x << 13;
+  x ^= x >> 17;
+  x ^= x << 5;
+  g_rng = x ? x : 0xA341316Cu;
+  return g_rng;
+}
+
+void add_score(uint32_t points) {
+  if (0xFFFFFFFFu - g_score < points) {
+    g_score = 0xFFFFFFFFu;
+  } else {
+    g_score += points;
+  }
+}
+
+void save_best_score() {
+  if (g_run_mode != RunMode::Infinite || g_score <= g_best_score) {
+    return;
+  }
+  g_best_score = g_score;
+  Preferences prefs;
+  if (prefs.begin("minidoom", false)) {
+    prefs.putUInt("inf_best", g_best_score);
+    prefs.end();
+  }
+}
+
 void say(const char *text, uint32_t ms) {
   strncpy(g_banner, text, sizeof g_banner - 1);
   g_banner[sizeof g_banner - 1] = '\0';
@@ -250,7 +289,8 @@ uint8_t map_at(int x, int y) {
   if (x < 0 || y < 0 || x >= kMapW || y >= kMapH) {
     return kCellBrickWall;
   }
-  return kLevels[g_level].cells[y][x];
+  return g_run_mode == RunMode::Infinite ? g_runtime_map[y][x]
+                                         : kLevels[g_level].cells[y][x];
 }
 
 bool block_ray(int x, int y) {
@@ -333,12 +373,7 @@ void check_art() {
   }
 }
 
-void load_level(uint8_t level) {
-  if (level >= kLevelCount) {
-    g_mode = Mode::Won;
-    return;
-  }
-  g_level = level;
+void clear_active_map_state() {
   g_map = false;
   g_has_ramp = false;
   g_enemy_n = 0;
@@ -348,14 +383,84 @@ void load_level(uint8_t level) {
   memset(g_enemies, 0, sizeof g_enemies);
   memset(g_pickups, 0, sizeof g_pickups);
   memset(g_shots, 0, sizeof g_shots);
-  g_ang = kLevels[g_level].start_angle;
   g_bob = 0;
   g_bob_phase = 0;
   g_kick = 0;
+}
+
+bool find_open_floor(int &out_x, int &out_y) {
+  for (int attempt = 0; attempt < 256; ++attempt) {
+    const int x = 1 + (int)(rng_next() % 14u);
+    const int y = 1 + (int)(rng_next() % 14u);
+    if (map_at(x, y) != kCellFloor) continue;
+    const float dx = (float)x + 0.5f - g_px;
+    const float dy = (float)y + 0.5f - g_py;
+    if (dx * dx + dy * dy < 5.0f) continue;
+    bool occupied = false;
+    for (int i = 0; i < g_enemy_n; ++i) {
+      const float ex = (float)x + 0.5f - g_enemies[i].x;
+      const float ey = (float)y + 0.5f - g_enemies[i].y;
+      if (ex * ex + ey * ey < 1.0f) occupied = true;
+    }
+    for (int i = 0; i < g_pickup_n; ++i) {
+      const float px = (float)x + 0.5f - g_pickups[i].x;
+      const float py = (float)y + 0.5f - g_pickups[i].y;
+      if (g_pickups[i].live && px * px + py * py < 1.0f) occupied = true;
+    }
+    if (occupied) continue;
+    out_x = x;
+    out_y = y;
+    return true;
+  }
+  return false;
+}
+
+void add_enemy_at(int x, int y, Kind kind, uint32_t now) {
+  if (g_enemy_n >= kMaxEnemy) return;
+  Enemy &e = g_enemies[g_enemy_n];
+  e = {};
+  e.x = (float)x + 0.5f;
+  e.y = (float)y + 0.5f;
+  e.lx = e.x;
+  e.ly = e.y;
+  e.kind = kind;
+  e.hp = (kind == kBeast) ? 64 : 30;
+  e.alive = true;
+  e.next_act = now + (uint32_t)g_enemy_n * 350u;
+  ++g_enemy_n;
+}
+
+void add_pickup_at(int x, int y, char kind) {
+  if (g_pickup_n >= kMaxPickup) return;
+  Pickup &p = g_pickups[g_pickup_n++];
+  p.x = (float)x + 0.5f;
+  p.y = (float)y + 0.5f;
+  p.kind = kind;
+  p.live = true;
+}
+
+void ensure_map_requirements(uint32_t now) {
+  int x = 0;
+  int y = 0;
+  while (g_enemy_n < 2 && find_open_floor(x, y)) {
+    add_enemy_at(x, y, g_enemy_n == 0 ? kBeast : kGuard, now);
+  }
+  bool have_health = false;
+  bool have_ammo = false;
+  for (int i = 0; i < g_pickup_n; ++i) {
+    have_health |= g_pickups[i].kind == 'h';
+    have_ammo |= g_pickups[i].kind == 'a';
+  }
+  if (!have_health && find_open_floor(x, y)) add_pickup_at(x, y, 'h');
+  if (!have_ammo && find_open_floor(x, y)) add_pickup_at(x, y, 'a');
+}
+
+void activate_map() {
+  clear_active_map_state();
   const uint32_t now = millis();
   for (int y = 0; y < kMapH; ++y) {
     for (int x = 0; x < kMapW; ++x) {
-      const uint8_t cell = kLevels[g_level].cells[y][x];
+      const uint8_t cell = map_at(x, y);
       if (cell == kCellRamp || cell == kCellRampExit) {
         g_has_ramp = true;
       }
@@ -366,40 +471,100 @@ void load_level(uint8_t level) {
         g_py = cy;
       } else if ((cell == kCellGuardSpawn || cell == kCellDemonSpawn) &&
                  g_enemy_n < kMaxEnemy) {
-        Enemy &e = g_enemies[g_enemy_n];
-        e = {};
-        e.x = cx;
-        e.y = cy;
-        e.lx = cx;
-        e.ly = cy;
-        e.kind = (cell == kCellDemonSpawn) ? kBeast : kGuard;
-        e.hp = (e.kind == kBeast) ? 64 : 30;
-        e.alive = true;
-        e.next_act = now + (uint32_t)g_enemy_n * 350u;
-        ++g_enemy_n;
+        add_enemy_at(x, y, cell == kCellDemonSpawn ? kBeast : kGuard, now);
       } else if ((cell == kCellAmmo || cell == kCellMedkit ||
                   cell == kCellArmor || cell == kCellShotgun) &&
                  g_pickup_n < kMaxPickup) {
-        Pickup &p = g_pickups[g_pickup_n++];
-        p.x = cx;
-        p.y = cy;
-        p.kind = cell == kCellAmmo ? 'a' :
-                 cell == kCellMedkit ? 'h' :
-                 cell == kCellArmor ? 'v' : 'g';
-        p.live = true;
+        add_pickup_at(x, y, cell == kCellAmmo ? 'a' :
+                           cell == kCellMedkit ? 'h' :
+                           cell == kCellArmor ? 'v' : 'g');
       } else if (cell == kCellExit) {
         g_exit_x = x;
         g_exit_y = y;
       }
     }
   }
+  ensure_map_requirements(now);
   g_next_shot = now + 400;
   g_mode = Mode::Play;
   aim();
-  Serial.printf("%s: %d enemies\n", kLevels[g_level].name, g_enemy_n);
+  if (g_run_mode == RunMode::Infinite) {
+    Serial.printf("Infinite map %lu: %d enemies\n", (unsigned long)g_infinite_map, g_enemy_n);
+  } else {
+    Serial.printf("%s: %d enemies\n", kLevels[g_level].name, g_enemy_n);
+  }
+}
+
+void load_level(uint8_t level) {
+  if (level >= kLevelCount) {
+    g_mode = Mode::Won;
+    return;
+  }
+  g_run_mode = RunMode::Levels;
+  g_level = level;
+  g_ang = kLevels[g_level].start_angle;
+  activate_map();
+}
+
+void carve_h(int y, int x0, int x1) {
+  if (x0 > x1) { const int t = x0; x0 = x1; x1 = t; }
+  for (int x = x0; x <= x1; ++x) g_runtime_map[y][x] = kCellFloor;
+}
+
+void carve_v(int x, int y0, int y1) {
+  if (y0 > y1) { const int t = y0; y0 = y1; y1 = t; }
+  for (int y = y0; y <= y1; ++y) g_runtime_map[y][x] = kCellFloor;
+}
+
+void generate_infinite_map() {
+  clear_active_map_state();
+  g_run_mode = RunMode::Infinite;
+  g_level = 0;
+  g_has_ramp = true;
+  g_exit_x = -1;
+  g_exit_y = -1;
+  g_px = 2.5f;
+  g_py = 1.5f;
+  memset(g_runtime_map, kCellBrickWall, sizeof g_runtime_map);
+  const int a = 4 + (int)(rng_next() % 4u);
+  const int b = 8 + (int)(rng_next() % 5u);
+  const int c = 3 + (int)(rng_next() % 4u);
+  carve_h(1, 2, a);
+  carve_v(a, 1, 4);
+  carve_h(4, a, b);
+  carve_v(b, 4, 7);
+  carve_h(7, c, b);
+  carve_v(c, 7, 11);
+  carve_h(11, c, 14);
+  carve_v(a + (int)(rng_next() % (uint32_t)(b - a + 1)), 2, 3);
+  carve_v(c + (int)(rng_next() % (uint32_t)(10 - c)), 8, 10);
+  g_runtime_map[1][2] = kCellPlayerStart;
+  g_runtime_map[11][10] = kCellRamp;
+  g_runtime_map[11][11] = kCellRamp;
+  g_runtime_map[11][12] = kCellRamp;
+  g_runtime_map[11][13] = kCellRampExit;
+  g_px = 2.5f;
+  g_py = 1.5f;
+  g_ang = 0.0f;
+
+  const uint32_t count = (g_infinite_map - 1u) / 3u;
+  const uint8_t enemy_target = (uint8_t)(2u + (count > 4u ? 4u : count));
+  for (uint8_t i = 0; i < enemy_target; ++i) {
+    int x = 0, y = 0;
+    if (!find_open_floor(x, y)) break;
+    g_runtime_map[y][x] = (i == 0 || (rng_next() & 1u))
+                              ? kCellDemonSpawn : kCellGuardSpawn;
+  }
+  const uint8_t guaranteed_pickups[2] = {kCellMedkit, kCellAmmo};
+  for (uint8_t cell : guaranteed_pickups) {
+    int x = 0, y = 0;
+    if (find_open_floor(x, y)) g_runtime_map[y][x] = cell;
+  }
+  activate_map();
 }
 
 void begin_level() {
+  g_run_mode = RunMode::Levels;
   g_hp = 100;
   g_armor = 0;
   g_ammo = 24;
@@ -409,9 +574,29 @@ void begin_level() {
   g_pain_until = 0;
   g_invuln = 0;
   g_flash_until = 0;
+  g_score = 0;
+  g_infinite_map = 1;
   g_px = 1.5f;
   g_py = 1.5f;
   load_level(0);
+}
+
+void begin_infinite() {
+  g_run_mode = RunMode::Infinite;
+  g_hp = 100;
+  g_armor = 0;
+  g_ammo = 24;
+  g_shotgun = false;
+  g_banner[0] = '\0';
+  g_banner_until = 0;
+  g_pain_until = 0;
+  g_invuln = 0;
+  g_flash_until = 0;
+  g_score = 0;
+  g_infinite_map = 1;
+  g_rng ^= millis() + micros() + 0x9E3779B9u;
+  if (g_rng == 0) g_rng = 1;
+  generate_infinite_map();
 }
 
 void pixel(uint8_t *buf, int x, int y, bool on) {
@@ -485,7 +670,25 @@ void draw_gradient_logo() {
 void draw_title() {
   oled.clearBuffer();
   draw_gradient_logo();
-  text_center(57, "PRESS FIRE TO START");
+  text_center(56, "CLICK TO CONTINUE");
+  oled.sendBuffer();
+}
+
+void draw_menu() {
+  oled.clearBuffer();
+  // The OLED uses top-positioned 5x7 text, so keep each row clear of its frame.
+  oled.drawStr(43, 1, "DOOM MODE");
+  oled.drawHLine(22, 10, 84);
+  if (g_menu_choice == 0) oled.drawFrame(17, 15, 94, 13);
+  if (g_menu_choice == 1) oled.drawFrame(17, 31, 94, 13);
+  oled.drawStr(27, 18, g_menu_choice == 0 ? ">" : " ");
+  oled.drawStr(41, 18, "LEVELS");
+  oled.drawStr(27, 34, g_menu_choice == 1 ? ">" : " ");
+  oled.drawStr(41, 34, "INFINITE");
+  oled.drawHLine(22, 46, 84);
+  char best[20];
+  snprintf(best, sizeof best, "BEST %lu", (unsigned long)g_best_score);
+  text_center(49, best);
   oled.sendBuffer();
 }
 
@@ -1166,6 +1369,16 @@ void draw_world() {
   oled.drawStr(11, kViewH + 1, health);
   oled.drawStr(51, kViewH + 1, armor);
   oled.drawStr(92, kViewH + 1, ammo);
+  if (g_run_mode == RunMode::Infinite) {
+    // Keep infinite-run progress in the sky band, clear of the status strip.
+    for (int y = 0; y < 9; ++y) {
+      for (int x = 0; x < 62; ++x) pixel(buf, x, y, false);
+    }
+    char progress[24];
+    snprintf(progress, sizeof progress, "I%lu S%lu",
+             (unsigned long)g_infinite_map, (unsigned long)g_score);
+    oled.drawStr(2, 1, progress);
+  }
   oled.sendBuffer();
 }
 
@@ -1204,6 +1417,17 @@ bool use_ramp_if_entered(int old_x, int old_y) {
   const bool level_exit = cell == kCellRampExit || cell == kCellExit;
   if (!level_exit || (old_x == new_x && old_y == new_y)) {
     return false;
+  }
+
+  if (g_run_mode == RunMode::Infinite) {
+    add_score(100);
+    save_best_score();
+    ++g_infinite_map;
+    generate_infinite_map();
+    char label[16];
+    snprintf(label, sizeof label, "MAP %lu", (unsigned long)g_infinite_map);
+    say(label, 1300);
+    return true;
   }
 
   if (g_level + 1 >= kLevelCount) {
@@ -1264,6 +1488,7 @@ void hurt(int dmg) {
   if (g_hp <= 0) {
     g_hp = 0;
     g_mode = Mode::Dead;
+    save_best_score();
   }
 }
 
@@ -1304,6 +1529,7 @@ void damage_enemy(int index, int amount) {
   e.flash_until = millis() + 80;
   if (e.hp <= 0) {
     e.alive = false;
+    if (g_run_mode == RunMode::Infinite) add_score(50);
   }
 }
 
@@ -1505,6 +1731,13 @@ void player_fire(uint32_t now, const Input &input) {
 void game_setup() {
   check_art();
   g_mode = Mode::Title;
+  g_rng = millis() ^ micros() ^ 0xA341316Cu;
+  if (g_rng == 0) g_rng = 1;
+  Preferences prefs;
+  if (prefs.begin("minidoom", true)) {
+    g_best_score = prefs.getUInt("inf_best", 0);
+    prefs.end();
+  }
 }
 
 void game_step(const Input &input) {
@@ -1519,9 +1752,28 @@ void game_step(const Input &input) {
     dt = 0.0f;
   }
 
+  if (g_mode == Mode::Title) {
+    if (input.use_edge || input.fire_edge) g_mode = Mode::Menu;
+    return;
+  }
+  if (g_mode == Mode::Menu) {
+    if (now >= g_menu_repeat_at && abs(input.axis_y) > 550) {
+      g_menu_choice = input.axis_y < 0 ? 0 : 1;
+      g_menu_repeat_at = now + 220;
+    }
+    if (input.use_edge || input.fire_edge) {
+      if (g_menu_choice == 0) begin_level();
+      else begin_infinite();
+    }
+    return;
+  }
+  if (g_mode == Mode::Dead || g_mode == Mode::Won) {
+    if (input.fire_edge || input.use_edge) g_mode = Mode::Menu;
+    return;
+  }
   if (g_mode != Mode::Play) {
     if (input.fire_edge || input.use_edge) {
-      begin_level();
+      g_mode = Mode::Menu;
     }
     return;
   }
@@ -1577,6 +1829,10 @@ void game_step(const Input &input) {
 void game_draw() {
   if (g_mode == Mode::Title) {
     draw_title();
+    return;
+  }
+  if (g_mode == Mode::Menu) {
+    draw_menu();
     return;
   }
   if (g_map && g_mode == Mode::Play) {
