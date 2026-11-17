@@ -15,6 +15,7 @@ Lab-checked 1.3-inch IPS color TFT module. The back of the board is marked `GMT1
 | Working supply | 3.3 V from ESP32-C3 Super Mini 3V3 |
 | Working SPI mode | `SPI_MODE3` (clock idles high) |
 | Working SPI clock | 1 MHz, a conservative bring-up speed |
+| Working orientation | `tft.setRotation(2)` for the current upside-down mounting |
 | Working library | Adafruit ST7735 and ST7789 Library with Adafruit GFX |
 
 ## Wiring to ESP32-C3 Super Mini
@@ -53,7 +54,7 @@ void setup() {
   tftSpi.begin(TFT_SCLK, -1, TFT_MOSI, -1);
   tft.init(240, 240, SPI_MODE3);
   tft.setSPISpeed(1000000);
-  tft.setRotation(0);
+  tft.setRotation(2);  // Rotate 180° to correct the current upside-down mounting.
 }
 ```
 
@@ -63,7 +64,7 @@ void setup() {
 
 - Backlight on but no pixels: verify RES and DC are not swapped, verify SCK→GPIO6 and SDA→GPIO7, and check that initialization uses `SPI_MODE3` with CS set to `-1`.
 - A running serial log only confirms the ESP32 sketch is running; this module has no MISO path to report whether it received commands.
-- If colors or orientation are wrong after pixels appear, try `tft.invertDisplay(true)` and `tft.setRotation(0..3)`.
+- The current mounting is upside down; use `tft.setRotation(2)` to rotate the image 180°. For another mounting, `tft.setRotation(0..3)` selects the four orientations. If colors are wrong, try `tft.invertDisplay(true)`.
 - Keep the SPI wires short. If the image is unstable, reduce the SPI clock further.
 
 ## Sources and bench confirmation
