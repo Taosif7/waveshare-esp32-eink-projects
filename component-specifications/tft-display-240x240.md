@@ -46,11 +46,14 @@ static constexpr int TFT_MOSI = 7;
 static constexpr int TFT_CS = -1;
 static constexpr int TFT_DC = 4;
 static constexpr int TFT_RST = 3;
+static constexpr int TFT_BL = 5;
 
 SPIClass tftSpi(FSPI);
 Adafruit_ST7789 tft(&tftSpi, TFT_CS, TFT_DC, TFT_RST);
 
 void setup() {
+  pinMode(TFT_BL, OUTPUT);
+  digitalWrite(TFT_BL, HIGH);
   tftSpi.begin(TFT_SCLK, -1, TFT_MOSI, -1);
   tft.init(240, 240, SPI_MODE3);
   tft.setSPISpeed(1000000);
