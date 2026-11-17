@@ -7,6 +7,7 @@ Lab notes for the hardware this repo actually drives. Pin numbers, addresses, an
 | [esp32-c6-epaper-1.54.md](esp32-c6-epaper-1.54.md) | Waveshare ESP32-C6-ePaper-1.54: MCU, header, onboard chips, power, USB rules |
 | [epaper-1.54.md](epaper-1.54.md) | 1.54″ 200×200 e-paper on that board |
 | [sh1106.md](sh1106.md) | External 4-pin SH1106 128×64 I2C OLED |
+| [tft-display-240x240.md](tft-display-240x240.md) | GMT130-V1.0 240×240 ST7789 SPI TFT; no CS or MISO, tested in SPI mode 3 |
 | [button.md](button.md) | Onboard BOOT and PWR, plus the external 3-pin button modules |
 | [joystick.md](joystick.md) | Analog stick on the expansion header |
 | [adxl345.md](adxl345.md) | ADXL345 accelerometer on the shared I2C header |
