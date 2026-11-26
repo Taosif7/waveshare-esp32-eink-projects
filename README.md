@@ -6,6 +6,7 @@ Projects for the [Waveshare ESP32-C6-ePaper-1.54](https://www.waveshare.com/esp3
 
 | Folder | Description |
 |--------|-------------|
+| [`fish-trio`](fish-trio/) | **Fish trio** — top-down koi swims e-ink → SH1106 → ST7789, synced over ESP-NOW |
 | [`rps-game`](rps-game/) | **Ink Duel** — Rock–Paper–Scissors on e-paper with joystick, result images, and SFX |
 | [`modak-catcher`](modak-catcher/) | **Modak Catcher** — Ganesh Ji catches falling modaks; analog stick, partial refresh |
 | [`claude-desk`](claude-desk/) | **Claude desk** — live Claude Code sessions on e-paper; chime and answer from the panel over BLE |

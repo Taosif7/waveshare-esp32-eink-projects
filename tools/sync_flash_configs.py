@@ -2,7 +2,9 @@
 """Rewrite the workspace Flash run configs from top-level PlatformIO projects.
 
 A project is any directory next to this script's parent that contains
-platformio.ini. Pass --check to fail when the committed JSON is stale.
+platformio.ini. A project with more than one [env:...] gets one Flash item
+per environment, and that item passes -e so upload does not walk every board.
+Pass --check to fail when the committed JSON is stale.
 """
 
 import json
@@ -13,20 +15,42 @@ ROOT = Path(__file__).resolve().parents[1]
 VSCODE = ROOT / ".vscode"
 
 
-def projects():
+def env_names(project):
     names = []
-    for path in sorted(ROOT.iterdir()):
-        if path.is_dir() and (path / "platformio.ini").is_file():
-            names.append(path.name)
+    for line in (project / "platformio.ini").read_text().splitlines():
+        stripped = line.strip()
+        if stripped.startswith("[env:") and stripped.endswith("]"):
+            names.append(stripped[len("[env:") : -1].strip())
     return names
 
 
-def task(name):
+def targets():
+    items = []
+    for path in sorted(ROOT.iterdir()):
+        if not path.is_dir() or not (path / "platformio.ini").is_file():
+            continue
+        envs = env_names(path)
+        if len(envs) > 1:
+            items.extend((path.name, env) for env in envs)
+        else:
+            items.append((path.name, None))
+    return items
+
+
+def label(name, env):
+    if env is None:
+        return name
+    return f"{name} ({env})"
+
+
+def task(name, env):
+    title = label(name, env)
+    args = ["run", "-t", "upload"] if env is None else ["run", "-e", env, "-t", "upload"]
     return {
-        "label": f"flash: {name}",
+        "label": f"flash: {title}",
         "type": "process",
         "command": "${env:HOME}/.platformio/penv/bin/pio",
-        "args": ["run", "-t", "upload"],
+        "args": args,
         "options": {"cwd": "${workspaceFolder}/" + name},
         "group": "build",
         "problemMatcher": [],
@@ -41,12 +65,13 @@ def task(name):
     }
 
 
-def configuration(name, order):
+def configuration(name, env, order):
+    title = label(name, env)
     return {
-        "name": name,
+        "name": title,
         "type": "node",
         "request": "launch",
-        "preLaunchTask": f"flash: {name}",
+        "preLaunchTask": f"flash: {title}",
         "runtimeArgs": ["-e", "process.exit(0)"],
         "console": "internalConsole",
         "internalConsoleOptions": "neverOpen",
@@ -54,12 +79,13 @@ def configuration(name, order):
     }
 
 
-def render(names):
-    tasks = {"version": "2.0.0", "tasks": [task(name) for name in names]}
+def render(items):
+    tasks = {"version": "2.0.0", "tasks": [task(name, env) for name, env in items]}
     launch = {
         "version": "0.2.0",
         "configurations": [
-            configuration(name, order) for order, name in enumerate(names, start=1)
+            configuration(name, env, order)
+            for order, (name, env) in enumerate(items, start=1)
         ],
     }
     return {
@@ -69,8 +95,8 @@ def render(names):
 
 
 def main():
-    names = projects()
-    files = render(names)
+    items = targets()
+    files = render(items)
     if "--check" in sys.argv:
         stale = [
             path.relative_to(ROOT).as_posix()
@@ -86,7 +112,7 @@ def main():
     VSCODE.mkdir(exist_ok=True)
     for path, text in files.items():
         path.write_text(text)
-    print(f"Wrote flash run configs for {len(names)} projects")
+    print(f"Wrote flash run configs for {len(items)} targets")
     return 0
 
 

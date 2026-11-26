@@ -232,6 +232,56 @@
       }
     },
     {
+      "label": "flash: fish-trio (esp32c6)",
+      "type": "process",
+      "command": "${env:HOME}/.platformio/penv/bin/pio",
+      "args": [
+        "run",
+        "-e",
+        "esp32c6",
+        "-t",
+        "upload"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}/fish-trio"
+      },
+      "group": "build",
+      "problemMatcher": [],
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": true,
+        "panel": "shared",
+        "showReuseMessage": false,
+        "clear": true
+      }
+    },
+    {
+      "label": "flash: fish-trio (esp32c3)",
+      "type": "process",
+      "command": "${env:HOME}/.platformio/penv/bin/pio",
+      "args": [
+        "run",
+        "-e",
+        "esp32c3",
+        "-t",
+        "upload"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}/fish-trio"
+      },
+      "group": "build",
+      "problemMatcher": [],
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": true,
+        "panel": "shared",
+        "showReuseMessage": false,
+        "clear": true
+      }
+    },
+    {
       "label": "flash: juliet-oled",
       "type": "process",
       "command": "${env:HOME}/.platformio/penv/bin/pio",
@@ -416,11 +466,38 @@
       }
     },
     {
-      "label": "flash: space-shooter",
+      "label": "flash: space-shooter (esp32-c6-epaper)",
       "type": "process",
       "command": "${env:HOME}/.platformio/penv/bin/pio",
       "args": [
         "run",
+        "-e",
+        "esp32-c6-epaper",
+        "-t",
+        "upload"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}/space-shooter"
+      },
+      "group": "build",
+      "problemMatcher": [],
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": true,
+        "panel": "shared",
+        "showReuseMessage": false,
+        "clear": true
+      }
+    },
+    {
+      "label": "flash: space-shooter (esp32-c3-mini)",
+      "type": "process",
+      "command": "${env:HOME}/.platformio/penv/bin/pio",
+      "args": [
+        "run",
+        "-e",
+        "esp32-c3-mini",
         "-t",
         "upload"
       ],

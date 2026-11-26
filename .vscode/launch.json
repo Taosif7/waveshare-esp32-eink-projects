@@ -162,6 +162,38 @@
       }
     },
     {
+      "name": "fish-trio (esp32c6)",
+      "type": "node",
+      "request": "launch",
+      "preLaunchTask": "flash: fish-trio (esp32c6)",
+      "runtimeArgs": [
+        "-e",
+        "process.exit(0)"
+      ],
+      "console": "internalConsole",
+      "internalConsoleOptions": "neverOpen",
+      "presentation": {
+        "group": "Flash",
+        "order": 11
+      }
+    },
+    {
+      "name": "fish-trio (esp32c3)",
+      "type": "node",
+      "request": "launch",
+      "preLaunchTask": "flash: fish-trio (esp32c3)",
+      "runtimeArgs": [
+        "-e",
+        "process.exit(0)"
+      ],
+      "console": "internalConsole",
+      "internalConsoleOptions": "neverOpen",
+      "presentation": {
+        "group": "Flash",
+        "order": 12
+      }
+    },
+    {
       "name": "juliet-oled",
       "type": "node",
       "request": "launch",
@@ -174,7 +206,7 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 11
+        "order": 13
       }
     },
     {
@@ -190,7 +222,7 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 12
+        "order": 14
       }
     },
     {
@@ -206,7 +238,7 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 13
+        "order": 15
       }
     },
     {
@@ -222,7 +254,7 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 14
+        "order": 16
       }
     },
     {
@@ -238,7 +270,7 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 15
+        "order": 17
       }
     },
     {
@@ -254,7 +286,7 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 16
+        "order": 18
       }
     },
     {
@@ -270,7 +302,7 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 17
+        "order": 19
       }
     },
     {
@@ -286,14 +318,14 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 18
+        "order": 20
       }
     },
     {
-      "name": "space-shooter",
+      "name": "space-shooter (esp32-c6-epaper)",
       "type": "node",
       "request": "launch",
-      "preLaunchTask": "flash: space-shooter",
+      "preLaunchTask": "flash: space-shooter (esp32-c6-epaper)",
       "runtimeArgs": [
         "-e",
         "process.exit(0)"
@@ -302,7 +334,23 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 19
+        "order": 21
+      }
+    },
+    {
+      "name": "space-shooter (esp32-c3-mini)",
+      "type": "node",
+      "request": "launch",
+      "preLaunchTask": "flash: space-shooter (esp32-c3-mini)",
+      "runtimeArgs": [
+        "-e",
+        "process.exit(0)"
+      ],
+      "console": "internalConsole",
+      "internalConsoleOptions": "neverOpen",
+      "presentation": {
+        "group": "Flash",
+        "order": 22
       }
     },
     {
@@ -318,7 +366,7 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 20
+        "order": 23
       }
     },
     {
@@ -334,7 +382,7 @@
       "internalConsoleOptions": "neverOpen",
       "presentation": {
         "group": "Flash",
-        "order": 21
+        "order": 24
       }
     }
   ]
