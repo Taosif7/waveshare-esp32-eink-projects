@@ -33,6 +33,7 @@ Lab notes for the hardware this repo actually drives. Pin numbers, addresses, an
 | `space-shooter` | C6: warning notice. C3: none | UI, portrait 64×128 | C6: BOOT and RXD. C3: GPIO3, BOOT optional | Move, click pauses | Star lean and ship bank |
 | `touch-pot-test` | | UI (C3) | Touch SIG on GPIO4/10/20/21/1; pot SIG on GPIO3 | | |
 | `cocktail-lab` | | UI (C3) | Same pads/pot: flavors + flow tap | | |
+| `fish-trio` | Koi on the C6 e-ink (right panel) | C3 only: SH1106 plus GMT130 ST7789 | C6 BOOT toggles the centerline. C6 PWR latches the battery | | |
 
 Sketches that draw on the OLED still paint the onboard e-paper once: a warning mark and the words `Content on other display`.
 
