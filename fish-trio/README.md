@@ -47,7 +47,7 @@ The e-ink panel, its SPI bus, and the TCA9554 power expander are onboard. This s
 
 ## Build, test, flash
 
-From this folder. Plug in **one** board at a time; both default to `/dev/ttyACM0`.
+From this folder. Plug in **one** board at a time; both default to `/dev/ttyACM0`. The Flash menu has a separate item per board (`fish-trio (esp32c6)` and `fish-trio (esp32c3)`), and each one passes `-e` so it does not upload both images to the same port.
 
 ```bash
 pio run -e esp32c6
